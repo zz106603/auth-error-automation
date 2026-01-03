@@ -18,5 +18,5 @@ spring:
     virtual-host: ${RABBIT_VHOST:/}
     listener:
       simple:
-        acknowledge-mode: auto
-        auto-startup: false
+        acknowledge-mode: manual
+        auto-startup: false # outbox/consumer 로직 완성 전에는 자동 소비 방지
