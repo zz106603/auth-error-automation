@@ -1,0 +1,42 @@
+services:
+  postgres:
+    image: postgres:16
+    container_name: auth_pipeline_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: auth_pipeline
+      POSTGRES_USER: manager
+      POSTGRES_PASSWORD: manager0
+      TZ: Asia/Seoul
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U app -d auth_pipeline"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  rabbitmq:
+    image: rabbitmq:3.13-management
+    container_name: auth_pipeline_rabbitmq
+    restart: unless-stopped
+    environment:
+      RABBITMQ_DEFAULT_USER: manager
+      RABBITMQ_DEFAULT_PASS: manager0
+      TZ: Asia/Seoul
+    ports:
+      - "5672:5672"    # AMQP
+      - "15672:15672"  # Management UI
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+    healthcheck:
+      test: ["CMD-SHELL", "rabbitmq-diagnostics -q ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+volumes:
+  postgres_data:
+  rabbitmq_data:
