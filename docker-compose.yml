@@ -4,9 +4,9 @@ services:
     container_name: auth_pipeline_postgres
     restart: unless-stopped
     environment:
-      POSTGRES_DB: auth_pipeline
-      POSTGRES_USER: manager
-      POSTGRES_PASSWORD: manager0
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
       TZ: Asia/Seoul
     ports:
       - "5432:5432"
@@ -23,8 +23,8 @@ services:
     container_name: auth_pipeline_rabbitmq
     restart: unless-stopped
     environment:
-      RABBITMQ_DEFAULT_USER: manager
-      RABBITMQ_DEFAULT_PASS: manager0
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_DEFAULT_USER}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_DEFAULT_PASS}
       TZ: Asia/Seoul
     ports:
       - "5672:5672"    # AMQP
