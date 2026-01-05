@@ -4,26 +4,34 @@ import com.yunhwan.auth.error.outbox.dto.OutboxEnqueueCommand;
 import com.yunhwan.auth.error.outbox.persistence.OutboxMessageRepository;
 import com.yunhwan.auth.error.support.AbstractIntegrationTest;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 
 import static org.assertj.core.api.AssertionsForClassTypes.assertThat;
 
+@DisplayName("Outbox Writer 통합 테스트")
 class OutboxWriterIntegrationTest extends AbstractIntegrationTest {
 
     @Autowired
     OutboxWriter outboxWriter;
 
     @Autowired
-    OutboxMessageRepository outboxMessageRepository;
+    OutboxMessageRepository outboxMessageRepo;
 
     @BeforeEach
     void setUp() {
-        outboxMessageRepository.deleteAll();
+        outboxMessageRepo.deleteAll();
     }
 
+    /**
+     * 정상 적재 검증:
+     * OutboxEnqueueCommand를 받아 DB에 정상적으로 저장되는지 확인한다.
+     * 저장된 메시지는 PENDING 상태여야 한다.
+     */
     @Test
-    void enqueue_inserts_one_row() {
+    @DisplayName("메시지 적재 요청 시 DB에 정상적으로 저장된다")
+    void 메시지_적재_요청_시_DB에_정상적으로_저장된다() {
         // given
         OutboxEnqueueCommand cmd = createCommand("REQ-1", "{\"hello\":\"world\"}");
 
@@ -32,16 +40,23 @@ class OutboxWriterIntegrationTest extends AbstractIntegrationTest {
 
         // then
         assertThat(saved.getId()).isNotNull();
-        assertThat(outboxMessageRepository.count()).isEqualTo(1);
+        assertThat(outboxMessageRepo.count()).isEqualTo(1);
 
-        var found = outboxMessageRepository.findByIdempotencyKey(cmd.idempotencyKey());
+        var found = outboxMessageRepo.findByIdempotencyKey(cmd.idempotencyKey());
         assertThat(found).isPresent();
         assertThat(found.get().getId()).isEqualTo(saved.getId());
         assertThat(found.get().getStatus().name()).isEqualTo("PENDING");
     }
 
+    /**
+     * 멱등성 검증:
+     * 동일한 멱등성 키(idempotencyKey)를 가진 요청이 중복해서 들어오더라도
+     * DB에는 단 하나의 로우만 존재해야 한다.
+     * 두 번째 요청에서도 에러 없이 기존에 저장된 메시지를 반환해야 한다.
+     */
     @Test
-    void enqueue_is_idempotent_by_idempotency_key() {
+    @DisplayName("동일한 멱등성 키로 중복 요청 시 새로운 로우를 생성하지 않고 기존 메시지를 반환한다")
+    void 동일한_멱등성_키로_중복_요청_시_새로운_로우를_생성하지_않고_기존_메시지를_반환한다() {
         // given
         OutboxEnqueueCommand cmd = createCommand("REQ-2", "{\"x\":1}");
 
@@ -50,7 +65,7 @@ class OutboxWriterIntegrationTest extends AbstractIntegrationTest {
         var second = outboxWriter.enqueue(cmd);
 
         // then
-        assertThat(outboxMessageRepository.count()).isEqualTo(1);
+        assertThat(outboxMessageRepo.count()).isEqualTo(1);
         assertThat(second.getId()).isEqualTo(first.getId());
     }
 
