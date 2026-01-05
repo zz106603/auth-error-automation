@@ -28,6 +28,8 @@ import java.time.OffsetDateTime;
 @Getter
 public class OutboxMessage {
 
+    private static final int DEFAULT_MAX_RETRIES = 10;
+
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
@@ -60,10 +62,10 @@ public class OutboxMessage {
     private int retryCount = 0;
 
     @Column(name = "max_retries", nullable = false)
-    private int maxRetries = 10;
+    private int maxRetries = DEFAULT_MAX_RETRIES;
 
     @Column(name = "next_retry_at", nullable = false)
-    private OffsetDateTime nextRetryAt = OffsetDateTime.now();
+    private OffsetDateTime nextRetryAt = OffsetDateTime.now(java.time.ZoneOffset.UTC);
 
     @Column(name = "last_error", columnDefinition = "text")
     private String lastError;
@@ -93,18 +95,13 @@ public class OutboxMessage {
         m.eventType = eventType;
         m.payload = payloadJson;
         m.idempotencyKey = idempotencyKey;
-
-        m.status = OutboxStatus.PENDING;
-        m.retryCount = 0;
-        m.maxRetries = 10;
-        m.nextRetryAt = OffsetDateTime.now();
         return m;
     }
 
     // ---- 상태 전이 메서드 (Publisher 단계에서 사용) ----
     public void markPublished() {
         this.status = OutboxStatus.PUBLISHED;
-        this.publishedAt = OffsetDateTime.now();
+        this.publishedAt = OffsetDateTime.now(java.time.ZoneOffset.UTC);
         this.lastError = null;
     }
 

@@ -16,8 +16,7 @@ create table if not exists outbox_message (
     idempotency_key varchar(200) not null,
 
     -- 상태/재시도
-    status          varchar(30) not null default 'PENDING'
-    check (status in ('PENDING', 'PUBLISHED', 'FAILED', 'DEAD')),
+    status          varchar(30) not null default 'PENDING' check (status in ('PENDING', 'PUBLISHED', 'FAILED', 'DEAD')),
 
     retry_count     int not null default 0,
     max_retries     int not null default 10,
