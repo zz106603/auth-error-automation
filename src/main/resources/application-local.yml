@@ -20,3 +20,8 @@ spring:
       simple:
         acknowledge-mode: manual
         auto-startup: false # outbox/consumer 로직 완성 전에는 자동 소비 방지
+
+outbox:
+  poller:
+    batch-size: 50
+    fixed-delay-ms: 500
