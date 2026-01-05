@@ -27,6 +27,7 @@ public abstract class AbstractIntegrationTest {
 
         // Flyway가 테스트 DB에서도 migration 돌도록 설정
         registry.add("spring.flyway.enabled", () -> true);
+        registry.add("spring.task.scheduling.enabled", () -> false);
         registry.add("spring.jpa.hibernate.ddl-auto", () -> "validate");
     }
 }
