@@ -3,12 +3,10 @@ package com.yunhwan.auth.error.outbox.service;
 import com.yunhwan.auth.error.domain.outbox.OutboxMessage;
 import com.yunhwan.auth.error.outbox.dto.OutboxEnqueueCommand;
 import com.yunhwan.auth.error.outbox.persistence.OutboxMessageRepository;
-import jakarta.persistence.EntityManager;
-import jakarta.persistence.PersistenceContext;
-import jakarta.transaction.Transactional;
 import lombok.RequiredArgsConstructor;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 @Service
 @RequiredArgsConstructor
