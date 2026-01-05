@@ -12,7 +12,7 @@ import org.springframework.transaction.annotation.Transactional;
 @RequiredArgsConstructor
 public class OutboxWriter {
 
-    private final OutboxMessageRepository outboxMessageRepository;
+    private final OutboxMessageRepository outboxMessageRepo;
 
     /**
      * outbox_message에 메시지를 적재한다.
@@ -23,7 +23,7 @@ public class OutboxWriter {
      */
     @Transactional
     public OutboxMessage enqueue(OutboxEnqueueCommand cmd) {
-        return outboxMessageRepository.upsertReturning(
+        return outboxMessageRepo.upsertReturning(
                 cmd.aggregateType(),
                 cmd.aggregateId(),
                 cmd.eventType(),
@@ -46,7 +46,7 @@ public class OutboxWriter {
         );
 
         try {
-            outboxMessageRepository.save(message);
+            outboxMessageRepo.save(message);
             return true;
         } catch (DataIntegrityViolationException e) {
             return false;

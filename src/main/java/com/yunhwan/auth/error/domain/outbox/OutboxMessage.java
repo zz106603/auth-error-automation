@@ -16,7 +16,7 @@ import java.time.OffsetDateTime;
 @Table(
         name = "outbox_message",
         indexes = {
-                @Index(name = "ix_outbox_polling", columnList = "status,next_retry_at,id"),
+                @Index(name = "ix_outbox_polling", columnList = "status,next_retry_at,created_at"),
                 @Index(name = "ix_outbox_aggregate", columnList = "aggregate_type,aggregate_id")
         },
         uniqueConstraints = {
@@ -58,14 +58,20 @@ public class OutboxMessage {
     @Column(name = "status", nullable = false, length = 30)
     private OutboxStatus status = OutboxStatus.PENDING;
 
+    @Column(name = "processing_owner", length = 100)
+    private String processingOwner;
+
+    @Column(name = "processing_started_at")
+    private OffsetDateTime processingStartedAt;
+
     @Column(name = "retry_count", nullable = false)
     private int retryCount = 0;
 
     @Column(name = "max_retries", nullable = false)
     private int maxRetries = DEFAULT_MAX_RETRIES;
 
-    @Column(name = "next_retry_at", nullable = false)
-    private OffsetDateTime nextRetryAt = OffsetDateTime.now(java.time.ZoneOffset.UTC);
+    @Column(name = "next_retry_at")
+    private OffsetDateTime nextRetryAt;
 
     @Column(name = "last_error", columnDefinition = "text")
     private String lastError;
@@ -95,6 +101,7 @@ public class OutboxMessage {
         m.eventType = eventType;
         m.payload = payloadJson;
         m.idempotencyKey = idempotencyKey;
+        m.nextRetryAt = null;
         return m;
     }
 
@@ -105,15 +112,19 @@ public class OutboxMessage {
         this.lastError = null;
     }
 
-    public void markFailed(String errorMessage, OffsetDateTime nextRetryAt) {
-        this.status = OutboxStatus.FAILED;
+    public void markForRetry(String errorMessage, OffsetDateTime nextRetryAt) {
+        this.status = OutboxStatus.PENDING;
         this.retryCount += 1;
         this.lastError = errorMessage;
         this.nextRetryAt = nextRetryAt;
+        this.processingOwner = null;
+        this.processingStartedAt = null;
     }
 
     public void markDead(String errorMessage) {
         this.status = OutboxStatus.DEAD;
         this.lastError = errorMessage;
+        this.processingOwner = null;
+        this.processingStartedAt = null;
     }
 }
