@@ -15,7 +15,6 @@ class OutboxWriterIntegrationTest extends AbstractIntegrationTest {
 
     @Autowired
     OutboxWriter outboxWriter;
-
     @Autowired
     OutboxMessageRepository outboxMessageRepo;
 
