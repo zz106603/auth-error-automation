@@ -1,0 +1,9 @@
+spring:
+  flyway:
+    enabled: true
+  task:
+    scheduling:
+      enabled: false
+  jpa:
+    hibernate:
+      ddl-auto: validate
