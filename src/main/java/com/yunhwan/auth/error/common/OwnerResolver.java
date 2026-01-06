@@ -4,6 +4,7 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
 import java.net.InetAddress;
+import java.net.UnknownHostException;
 
 @Component
 public class OwnerResolver {
@@ -20,7 +21,7 @@ public class OwnerResolver {
         // 2) 호스트명 fallback
         try {
             return InetAddress.getLocalHost().getHostName();
-        } catch (Exception e) {
+        } catch (UnknownHostException e) {
             // 3) 최후 fallback
             return "unknown";
         }

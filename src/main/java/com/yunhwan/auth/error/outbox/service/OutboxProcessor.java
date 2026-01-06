@@ -42,19 +42,20 @@ public class OutboxProcessor {
     private void handleFailure(OutboxMessage m, Exception e) {
         int nextRetryCount = m.getRetryCount() + 1;
         String err = truncate(e.getClass().getSimpleName() + ": " + safeMsg(e), 1000);
+        OffsetDateTime now = OffsetDateTime.now(clock);
 
         int maxRetries = props.getRetry().getMaxRetries();
         int retryDelaySeconds = props.getRetry().getDelaySeconds();
 
         if (nextRetryCount >= maxRetries) {
             // 포기 -> DEAD
-            outboxMessageRepo.markDead(m.getId(), nextRetryCount, err, OffsetDateTime.now(clock));
+            outboxMessageRepo.markDead(m.getId(), nextRetryCount, err, now);
             return;
         }
 
         // 재시도 -> PENDING + next_retry_at 설정
-        OffsetDateTime nextRetryAt = OffsetDateTime.now(clock).plusSeconds(retryDelaySeconds);
-        outboxMessageRepo.markForRetry(m.getId(), nextRetryCount, nextRetryAt, err, OffsetDateTime.now(clock));
+        OffsetDateTime nextRetryAt = now.plusSeconds(retryDelaySeconds);
+        outboxMessageRepo.markForRetry(m.getId(), nextRetryCount, nextRetryAt, err, now);
     }
 
     private String safeMsg(Exception e) {
