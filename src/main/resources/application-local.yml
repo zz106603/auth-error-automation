@@ -22,6 +22,17 @@ spring:
         auto-startup: false # outbox/consumer 로직 완성 전에는 자동 소비 방지
 
 outbox:
+  owner: ${POD_NAME:}
+
   poller:
     batch-size: 50
     fixed-delay-ms: 500
+
+  retry:
+    max-retries: 10
+    delay-seconds: 60
+
+  reaper:
+    stale-after-seconds: 300
+    batch-size: 100
+    fixed-delay-ms: 5000
