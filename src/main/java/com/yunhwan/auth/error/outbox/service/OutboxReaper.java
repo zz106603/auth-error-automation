@@ -17,7 +17,6 @@ import java.util.List;
 public class OutboxReaper {
 
     private final OutboxMessageRepository repo;
-    private final OwnerResolver ownerResolver;
     private final OutboxProperties props;
     private final Clock clock;
 
@@ -27,11 +26,10 @@ public class OutboxReaper {
 
         int staleAfterSeconds = props.getReaper().getStaleAfterSeconds();
         int batchSize = props.getReaper().getBatchSize();
-        String owner = ownerResolver.resolve();
 
         OffsetDateTime staleBefore = now.minusSeconds(staleAfterSeconds);
 
-        List<OutboxMessage> stale = repo.pickStaleProcessingByOwner(owner, staleBefore, batchSize);
+        List<OutboxMessage> stale = repo.pickStaleProcessing(staleBefore, batchSize);
         if (stale.isEmpty()) return 0;
 
         int maxRetries = props.getRetry().getMaxRetries();
