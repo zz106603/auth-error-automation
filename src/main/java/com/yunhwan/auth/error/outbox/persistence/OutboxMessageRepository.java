@@ -151,23 +151,4 @@ public interface OutboxMessageRepository extends JpaRepository<OutboxMessage, Lo
             @Param("staleBefore") OffsetDateTime staleBefore,
             @Param("batchSize") int batchSize
     );
-
-    // 기본 리퍼
-    @Query(value = """
-    select *
-      from outbox_message
-     where status = 'PROCESSING'
-       and processing_owner = :owner
-       and processing_started_at is not null
-       and processing_started_at <= :staleBefore
-     order by processing_started_at asc
-     limit :batchSize
-     for update skip locked
-    """, nativeQuery = true)
-    List<OutboxMessage> pickStaleProcessingByOwner(
-            @Param("owner") String owner,
-            @Param("staleBefore") OffsetDateTime staleBefore,
-            @Param("batchSize") int batchSize
-    );
-
 }
