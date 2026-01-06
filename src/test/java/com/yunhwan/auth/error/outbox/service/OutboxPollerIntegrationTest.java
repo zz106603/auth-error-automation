@@ -24,10 +24,8 @@ class OutboxPollerIntegrationTest extends AbstractIntegrationTest {
 
     @Autowired
     OutboxMessageRepository outboxMessageRepo;
-
     @Autowired
     OutboxPoller outboxPoller;
-
     @Autowired
     TransactionTemplate tx;
 
