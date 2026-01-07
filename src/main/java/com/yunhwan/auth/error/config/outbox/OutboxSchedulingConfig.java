@@ -1,4 +1,4 @@
-package com.yunhwan.auth.error.config;
+package com.yunhwan.auth.error.config.outbox;
 
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;

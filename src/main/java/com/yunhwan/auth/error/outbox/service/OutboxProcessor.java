@@ -1,6 +1,6 @@
 package com.yunhwan.auth.error.outbox.service;
 
-import com.yunhwan.auth.error.config.OutboxProperties;
+import com.yunhwan.auth.error.config.outbox.OutboxProperties;
 import com.yunhwan.auth.error.domain.outbox.OutboxMessage;
 import com.yunhwan.auth.error.outbox.persistence.OutboxMessageRepository;
 import com.yunhwan.auth.error.outbox.publisher.OutboxPublisher;
