@@ -16,6 +16,11 @@ spring:
     username: ${RABBIT_USERNAME}
     password: ${RABBIT_PASSWORD}
     virtual-host: ${RABBIT_VHOST:/}
+    dynamic: true
+    publisher-confirm-type: correlated # publish 후 ack / nack 받기
+    publisher-returns: true # 라우팅 실패 시 return callback
+    template:
+      mandatory: true # 큐 없으면 유실 말고 return
     listener:
       simple:
         acknowledge-mode: manual
