@@ -88,7 +88,7 @@ public class RabbitOutboxPublisher implements OutboxPublisher {
             throw new IllegalStateException("Confirm timeout", e);
         } catch (Exception e) {
             // 그 외 예외 (InterruptedException 등)
-            log.error("[RabbitOutboxPublisher] Publish ERROR. id={}, error={}", message.getId(), e.getMessage());
+            log.error("[RabbitOutboxPublisher] Publish ERROR. id={}, error={}", message.getId(), e.getMessage(), e);
             throw e;
         }
     }
