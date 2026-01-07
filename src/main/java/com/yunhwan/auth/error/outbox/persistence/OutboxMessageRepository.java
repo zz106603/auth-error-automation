@@ -89,7 +89,8 @@ public interface OutboxMessageRepository extends JpaRepository<OutboxMessage, Lo
                processing_started_at = null,
                last_error = null,
                next_retry_at = null,
-               updated_at = :now
+               updated_at = :now,
+               published_at = :now
          where id = :id
         """, nativeQuery = true)
     int markPublished(@Param("id") long id, @Param("now") OffsetDateTime now);
