@@ -1,9 +1,51 @@
 spring:
-  flyway:
-    enabled: true
-  task:
-    scheduling:
-      enabled: false
+  datasource:
+    driver-class-name: org.postgresql.Driver
+    hikari:
+      maximum-pool-size: 5
+
   jpa:
     hibernate:
       ddl-auto: validate
+    show-sql: false
+    properties:
+      hibernate:
+        format_sql: false
+
+  flyway:
+    enabled: true
+
+  task:
+    scheduling:
+      enabled: false
+
+  rabbitmq:
+    host: ${RABBIT_HOST:localhost}
+    port: ${RABBIT_PORT:5672}
+    username: ${RABBIT_USERNAME:guest}
+    password: ${RABBIT_PASSWORD:guest}
+    virtual-host: /
+    dynamic: true
+
+    # publisher confirm / return (실제 동작 검증용)
+    publisher-confirm-type: correlated
+    publisher-returns: true
+    template:
+      mandatory: true
+
+    # consumer는 테스트 범위 아님
+    listener:
+      simple:
+        auto-startup: false
+
+# === Outbox 테스트 튜닝 ===
+outbox:
+  poller:
+    batch-size: 10
+    fixed-delay-ms: 200   # 빠르게 poll
+  retry:
+    max-retries: 2        # 테스트에서 DEAD까지 빠르게 가기
+    delay-seconds: 1      # retry 대기 최소화
+  reaper:
+    stale-after-seconds: 5
+    fixed-delay-ms: 500
