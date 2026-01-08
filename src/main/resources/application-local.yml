@@ -24,7 +24,8 @@ spring:
     listener:
       simple:
         acknowledge-mode: manual
-        auto-startup: false # outbox/consumer 로직 완성 전에는 자동 소비 방지
+        default-requeue-rejected: false
+        auto-startup: true # outbox/consumer 로직 완성 전에는 자동 소비 방지
 
 outbox:
   owner: ${POD_NAME:}
