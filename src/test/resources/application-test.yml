@@ -32,11 +32,9 @@ spring:
     publisher-returns: true
     template:
       mandatory: true
-
-    # consumer는 테스트 범위 아님
     listener:
       simple:
-        auto-startup: false
+        auto-startup: true
 
 # === Outbox 테스트 튜닝 ===
 outbox:
