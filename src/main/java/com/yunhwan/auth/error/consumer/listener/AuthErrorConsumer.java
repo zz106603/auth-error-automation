@@ -103,11 +103,15 @@ public class AuthErrorConsumer {
 
     private int getRetryCount(Message message) {
         Object v = message.getMessageProperties().getHeaders().get(RETRY_HEADER);
-        if (v == null) return 0;
-        if (v instanceof Integer i) return i;
-        if (v instanceof Long l) return l.intValue();
+        if (v instanceof Number num) {
+            return num.intValue();
+        }
         if (v instanceof String s) {
-            try { return Integer.parseInt(s); } catch (Exception ignore) {}
+            try {
+                return Integer.parseInt(s);
+            } catch (NumberFormatException ignore) {
+                // It's not a number, fall through to default
+            }
         }
         return 0;
     }
