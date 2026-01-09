@@ -12,9 +12,11 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.ActiveProfiles;
 
+import java.time.Clock;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.List;
+import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -25,6 +27,8 @@ class OutboxReaperIntegrationTest extends AbstractStubIntegrationTest {
     OutboxPoller poller;
     @Autowired
     OutboxReaper reaper;
+    @Autowired
+    Clock clock;
     @Autowired
     OutboxMessageRepository repo;
     @Autowired
@@ -45,7 +49,7 @@ class OutboxReaperIntegrationTest extends AbstractStubIntegrationTest {
     @DisplayName("오랫동안 처리중인(Stale) 메시지는 PENDING 상태로 복구되고 재시도 정보가 갱신된다")
     void 오랫동안_처리중인_메시지는_PENDING_상태로_복구되고_재시도_정보가_갱신된다() {
         // given: 메시지 생성
-        OutboxMessage m = createMessage("REQ-STUCK", "{\"val\":\"x\"}");
+        OutboxMessage m = createMessage("REQ-STUCK" + UUID.randomUUID(), "{\"val\":\"x\"}");
 
         // poller가 claim해서 PROCESSING 상태로 만든다
         List<OutboxMessage> claimed = poller.pollOnce();
@@ -85,7 +89,8 @@ class OutboxReaperIntegrationTest extends AbstractStubIntegrationTest {
                 reqId,
                 "AUTH_ERROR_DETECTED_V1",
                 payload,
-                "AUTH_ERROR:" + reqId + ":AUTH_ERROR_DETECTED_V1"
+                "AUTH_ERROR:" + reqId + ":AUTH_ERROR_DETECTED_V1",
+                OffsetDateTime.now(clock)
         );
     }
 }

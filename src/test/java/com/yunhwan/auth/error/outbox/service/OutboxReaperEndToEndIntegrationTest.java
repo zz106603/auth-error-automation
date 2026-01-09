@@ -11,9 +11,11 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.jdbc.core.JdbcTemplate;
 
+import java.time.Clock;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.List;
+import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -28,6 +30,8 @@ class OutboxReaperEndToEndIntegrationTest extends AbstractStubIntegrationTest {
     OutboxProcessor processor;
     @Autowired
     OutboxMessageRepository repo;
+    @Autowired
+    Clock clock;
     @Autowired
     TestOutboxPublisher testPublisher;
     @Autowired
@@ -49,7 +53,7 @@ class OutboxReaperEndToEndIntegrationTest extends AbstractStubIntegrationTest {
     @DisplayName("처리가 중단된 메시지를 Reaper가 복구하고 다시 처리하여 완료(PUBLISHED)시킨다")
     void 처리가_중단된_메시지를_Reaper가_복구하고_다시_처리하여_완료시킨다() {
         // given: 메시지 생성
-        OutboxMessage m = createMessage("REQ-E2E", "{\"val\":\"e2e\"}");
+        OutboxMessage m = createMessage("REQ-E2E" + UUID.randomUUID(), "{\"val\":\"e2e\"}");
 
         // 1) poller가 claim해서 PROCESSING으로 만든다
         List<OutboxMessage> claimed1 = poller.pollOnce();
@@ -76,7 +80,7 @@ class OutboxReaperEndToEndIntegrationTest extends AbstractStubIntegrationTest {
         assertThat(afterReap.getLastError()).contains("STALE_PROCESSING");
 
         // 4) "재시도 시간이 지났다"를 만들기 위해 next_retry_at을 과거로 강제
-        repo.setNextRetryAt(m.getId(), OffsetDateTime.now(ZoneOffset.UTC).minusSeconds(1));
+        repo.setNextRetryAt(m.getId(), OffsetDateTime.now(ZoneOffset.UTC).minusSeconds(1), OffsetDateTime.now(clock));
 
         // 5) 이번에는 publish 성공하게 설정
         testPublisher.failNext(false);
@@ -107,7 +111,8 @@ class OutboxReaperEndToEndIntegrationTest extends AbstractStubIntegrationTest {
                 reqId,
                 "AUTH_ERROR_DETECTED_V1",
                 payload,
-                "AUTH_ERROR:" + reqId + ":AUTH_ERROR_DETECTED_V1"
+                "AUTH_ERROR:" + reqId + ":AUTH_ERROR_DETECTED_V1",
+                OffsetDateTime.now(clock)
         );
     }
 }

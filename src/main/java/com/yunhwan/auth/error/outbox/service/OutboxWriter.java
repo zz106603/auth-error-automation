@@ -8,11 +8,15 @@ import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.Clock;
+import java.time.OffsetDateTime;
+
 @Service
 @RequiredArgsConstructor
 public class OutboxWriter {
 
     private final OutboxMessageRepository outboxMessageRepo;
+    private final Clock clock;
 
     /**
      * outbox_message에 메시지를 적재한다.
@@ -28,7 +32,8 @@ public class OutboxWriter {
                 cmd.aggregateId(),
                 cmd.eventType(),
                 cmd.payloadJson(),
-                cmd.idempotencyKey()
+                cmd.idempotencyKey(),
+                OffsetDateTime.now(clock)
         );
     }
 

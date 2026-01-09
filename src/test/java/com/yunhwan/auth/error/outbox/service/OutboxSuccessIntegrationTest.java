@@ -11,7 +11,10 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.test.context.ActiveProfiles;
 
+import java.time.Clock;
+import java.time.OffsetDateTime;
 import java.util.List;
+import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -23,6 +26,9 @@ class OutboxSuccessIntegrationTest extends AbstractStubIntegrationTest {
 
     @Autowired
     OutboxPoller outboxPoller;
+
+    @Autowired
+    Clock clock;
 
     @Autowired
     OutboxProcessor outboxProcessor;
@@ -43,7 +49,7 @@ class OutboxSuccessIntegrationTest extends AbstractStubIntegrationTest {
     @DisplayName("메시지가 정상적으로 생성, 폴링, 발행되어 PUBLISHED 상태가 된다")
     void 메시지가_정상적으로_생성_폴링_발행되어_PUBLISHED_상태가_된다() {
         // given: DB에 outbox row 생성
-        OutboxMessage saved = createMessage("REQ-1", "{ \"error\": \"AUTH_FAILED\" }");
+        OutboxMessage saved = createMessage("REQ-1" + UUID.randomUUID(), "{ \"error\": \"AUTH_FAILED\" }");
 
         // when: 폴링 및 처리
         List<OutboxMessage> claimed = outboxPoller.pollOnce();
@@ -67,7 +73,8 @@ class OutboxSuccessIntegrationTest extends AbstractStubIntegrationTest {
                 reqId,
                 "AUTH_ERROR_DETECTED_V1",
                 payload,
-                "AUTH_ERROR:" + reqId + ":V1"
+                "AUTH_ERROR:" + reqId + ":V1",
+                OffsetDateTime.now(clock)
         );
     }
 }

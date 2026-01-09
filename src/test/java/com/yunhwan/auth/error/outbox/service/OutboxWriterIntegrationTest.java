@@ -10,6 +10,8 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.test.context.ActiveProfiles;
 
+import java.util.UUID;
+
 import static org.assertj.core.api.AssertionsForClassTypes.assertThat;
 
 @DisplayName("Outbox Writer 통합 테스트")
@@ -34,7 +36,7 @@ class OutboxWriterIntegrationTest extends AbstractStubIntegrationTest {
     @DisplayName("메시지 적재 요청 시 DB에 정상적으로 저장된다")
     void 메시지_적재_요청_시_DB에_정상적으로_저장된다() {
         // given
-        OutboxEnqueueCommand cmd = createCommand("REQ-1", "{\"hello\":\"world\"}");
+        OutboxEnqueueCommand cmd = createCommand("REQ-1" + UUID.randomUUID(), "{\"hello\":\"world\"}");
 
         // when
         var saved = outboxWriter.enqueue(cmd);
@@ -59,7 +61,7 @@ class OutboxWriterIntegrationTest extends AbstractStubIntegrationTest {
     @DisplayName("동일한 멱등성 키로 중복 요청 시 새로운 로우를 생성하지 않고 기존 메시지를 반환한다")
     void 동일한_멱등성_키로_중복_요청_시_새로운_로우를_생성하지_않고_기존_메시지를_반환한다() {
         // given
-        OutboxEnqueueCommand cmd = createCommand("REQ-2", "{\"x\":1}");
+        OutboxEnqueueCommand cmd = createCommand("REQ-2" + UUID.randomUUID(), "{\"x\":1}");
 
         // when
         var first = outboxWriter.enqueue(cmd);
