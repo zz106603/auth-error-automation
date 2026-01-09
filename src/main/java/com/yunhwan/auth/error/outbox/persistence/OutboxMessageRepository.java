@@ -28,7 +28,7 @@ public interface OutboxMessageRepository extends JpaRepository<OutboxMessage, Lo
     VALUES
       (:aggregateType, :aggregateId, :eventType, CAST(:payloadJson AS jsonb), :idempotencyKey)
     ON CONFLICT (idempotency_key)
-    DO UPDATE SET updated_at = now()
+    DO UPDATE SET updated_at = :now
     RETURNING *
     """, nativeQuery = true)
     OutboxMessage upsertReturning(
@@ -36,7 +36,8 @@ public interface OutboxMessageRepository extends JpaRepository<OutboxMessage, Lo
             @Param("aggregateId") String aggregateId,
             @Param("eventType") String eventType,
             @Param("payloadJson") String payloadJson,
-            @Param("idempotencyKey") String idempotencyKey
+            @Param("idempotencyKey") String idempotencyKey,
+            @Param("now") OffsetDateTime now
     );
 
     /**
@@ -49,7 +50,7 @@ public interface OutboxMessageRepository extends JpaRepository<OutboxMessage, Lo
           SELECT id
           FROM outbox_message
           WHERE status = 'PENDING'
-            AND (next_retry_at IS NULL OR next_retry_at <= now())
+            AND (next_retry_at IS NULL OR next_retry_at <= :now)
           ORDER BY COALESCE(next_retry_at, created_at), created_at
           LIMIT :batchSize
           FOR UPDATE SKIP LOCKED
@@ -57,15 +58,16 @@ public interface OutboxMessageRepository extends JpaRepository<OutboxMessage, Lo
         UPDATE outbox_message o
         SET status = 'PROCESSING',
             processing_owner = :owner,
-            processing_started_at = now(),
-            updated_at = now()
+            processing_started_at = :now,
+            updated_at = :now
         FROM picked
         WHERE o.id = picked.id
         RETURNING o.*
         """, nativeQuery = true)
     List<OutboxMessage> claimBatch(
             @Param("batchSize") int batchSize,
-            @Param("owner") String owner
+            @Param("owner") String owner,
+            @Param("now") OffsetDateTime now
     );
 
     // 테스트용: next_retry_at 세팅 (운영 코드에서도 retry 처리 시 쓰게 됨)
@@ -74,10 +76,14 @@ public interface OutboxMessageRepository extends JpaRepository<OutboxMessage, Lo
     @Query(value = """
         UPDATE outbox_message
         SET next_retry_at = :nextRetryAt,
-            updated_at = now()
+            updated_at = :now
         WHERE id = :id
         """, nativeQuery = true)
-    int setNextRetryAt(@Param("id") Long id, @Param("nextRetryAt") OffsetDateTime nextRetryAt);
+    int setNextRetryAt(
+            @Param("id") Long id,
+            @Param("nextRetryAt") OffsetDateTime nextRetryAt,
+            @Param("now") OffsetDateTime now
+    );
 
     // === 성공 ===
     @Modifying(clearAutomatically = true, flushAutomatically = true)

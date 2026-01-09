@@ -11,9 +11,11 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.jdbc.core.JdbcTemplate;
 
+import java.time.Clock;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.List;
+import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -24,6 +26,7 @@ class OutboxRetryAndDeadIntegrationTest extends AbstractStubIntegrationTest {
     @Autowired OutboxProcessor processor;
     @Autowired OutboxMessageRepository repo;
     @Autowired TestOutboxPublisher testPublisher;
+    @Autowired Clock clock;
     @Autowired JdbcTemplate jdbcTemplate;
 
     @BeforeEach
@@ -41,7 +44,7 @@ class OutboxRetryAndDeadIntegrationTest extends AbstractStubIntegrationTest {
     @DisplayName("발행 실패 후 재시도 시간이 미래인 경우 즉시 재폴링되지 않고 시간이 지나야 재처리된다")
     void 발행_실패_후_재시도_시간이_미래인_경우_즉시_재폴링되지_않고_시간이_지나야_재처리된다() {
         // given
-        OutboxMessage m = createMessage("REQ-RETRY", "{\"val\":\"fail-once\"}");
+        OutboxMessage m = createMessage("REQ-RETRY" + UUID.randomUUID(), "{\"val\":\"fail-once\"}");
 
         // 1) 첫 publish는 실패하게 설정
         testPublisher.failNext(true);
@@ -64,7 +67,7 @@ class OutboxRetryAndDeadIntegrationTest extends AbstractStubIntegrationTest {
         assertThat(claimed2).isEmpty();
 
         // when: 시간을 "지났다고 가정"하기 위해 next_retry_at을 과거로 강제
-        repo.setNextRetryAt(m.getId(), OffsetDateTime.now(ZoneOffset.UTC).minusSeconds(1));
+        repo.setNextRetryAt(m.getId(), OffsetDateTime.now(ZoneOffset.UTC).minusSeconds(1), OffsetDateTime.now(clock));
 
         // 그리고 이번엔 publish 성공하게 설정
         testPublisher.failNext(false);
@@ -89,7 +92,7 @@ class OutboxRetryAndDeadIntegrationTest extends AbstractStubIntegrationTest {
     @DisplayName("최대 재시도 횟수에 도달하면 DEAD 상태로 전환된다")
     void 최대_재시도_횟수에_도달하면_DEAD_상태로_전환된다() {
         // given
-        OutboxMessage m = createMessage("REQ-DEAD", "{\"val\":\"always-fail\"}");
+        OutboxMessage m = createMessage("REQ-DEAD" + UUID.randomUUID(), "{\"val\":\"always-fail\"}");
 
         // OutboxProcessor 내부 maxRetries=10 이므로, retry_count를 9로 세팅
         // 다음 실패 시 nextRetryCount=10이 되어 DEAD 조건(>=10) 충족
@@ -126,7 +129,8 @@ class OutboxRetryAndDeadIntegrationTest extends AbstractStubIntegrationTest {
                 reqId,
                 "AUTH_ERROR_DETECTED_V1",
                 payload,
-                "AUTH_ERROR:" + reqId + ":AUTH_ERROR_DETECTED_V1"
+                "AUTH_ERROR:" + reqId + ":AUTH_ERROR_DETECTED_V1",
+                OffsetDateTime.now(clock)
         );
     }
 }

@@ -13,7 +13,6 @@ import java.util.List;
 @RequiredArgsConstructor
 public class OutboxPoller {
 
-    private final OutboxMessageRepository outboxMessageRepo;
     private final OutboxClaimer outboxClaimer;
     private final OwnerResolver ownerResolver;
     private final OutboxProperties props;
@@ -23,6 +22,6 @@ public class OutboxPoller {
         String owner = ownerResolver.resolve();
         int batchSize = props.getPoller().getBatchSize();
 
-        return outboxClaimer.claim(batchSize, owner);
+        return outboxClaimer.claimBatch(batchSize, owner);
     }
 }
