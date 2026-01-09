@@ -3,7 +3,7 @@ package com.yunhwan.auth.error.outbox.service;
 import com.yunhwan.auth.error.config.outbox.OutboxProperties;
 import com.yunhwan.auth.error.domain.outbox.OutboxMessage;
 import com.yunhwan.auth.error.outbox.persistence.OutboxMessageRepository;
-import com.yunhwan.auth.error.outbox.support.ReapDecision;
+import com.yunhwan.auth.error.outbox.support.OutboxDecision;
 import com.yunhwan.auth.error.outbox.support.api.RetryPolicy;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -44,9 +44,9 @@ public class OutboxReaper {
 
         int affected = 0;
         for (OutboxMessage m : stale) {
-            ReapDecision decision = decide(m, now, staleAfterSeconds);
+            OutboxDecision decision = decide(m, now, staleAfterSeconds);
 
-            if (decision.dead()) {
+            if (decision.isDead()) {
                 affected += outboxMessageRepo.markDead(
                         m.getId(),
                         decision.nextRetryCount(),
@@ -67,15 +67,15 @@ public class OutboxReaper {
         return affected;
     }
 
-    private ReapDecision decide(OutboxMessage m, OffsetDateTime now, int staleAfterSeconds) {
+    private OutboxDecision decide(OutboxMessage m, OffsetDateTime now, int staleAfterSeconds) {
         int nextRetryCount = retryPolicy.nextRetryCount(m.getRetryCount());
         String lastError = "STALE_PROCESSING: reaped after " + staleAfterSeconds + "s";
 
         if (retryPolicy.shouldDead(nextRetryCount)) {
-            return ReapDecision.dead(nextRetryCount, lastError);
+            return OutboxDecision.ofDead(nextRetryCount, lastError);
         }
 
         OffsetDateTime nextRetryAt = retryPolicy.nextRetryAt(now, nextRetryCount);
-        return ReapDecision.retry(nextRetryCount, nextRetryAt, lastError);
+        return OutboxDecision.ofRetry(nextRetryCount, nextRetryAt, lastError);
     }
 }
