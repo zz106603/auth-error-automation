@@ -50,14 +50,6 @@ public class AuthErrorConsumer {
             return;
         }
 
-        // 2) Idempotency gate (처리 전에 먼저!)
-//        int inserted = processedMessageRepo.insertIgnore(outboxId);
-//        if (inserted == 0) {
-//            log.info("[AuthErrorConsumer] duplicate message -> ack. outboxId={}", outboxId);
-//            channel.basicAck(tag, false);
-//            return;
-//        }
-
         // 3) handler로 위임 (consumer는 얇게)
         try {
             Map<String, Object> headers = new HashMap<>();
