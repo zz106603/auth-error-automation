@@ -35,9 +35,7 @@ public class AuthErrorHandlerImpl implements AuthErrorHandler {
                 ));
 
         // 이미 완료된 건이면 멱등하게 종료 (중복 소비/재전달 대비)
-        if (authError.getStatus() == AuthErrorStatus.PROCESSED
-                || authError.getStatus() == AuthErrorStatus.RESOLVED
-                || authError.getStatus() == AuthErrorStatus.IGNORED) {
+        if (authError.getStatus().isTerminal()) {
             log.info("[AuthErrorHandler] already done -> skip. authErrorId={}, status={}, outboxId={}",
                     authError.getId(), authError.getStatus(), outboxId);
             return;

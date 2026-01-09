@@ -1,11 +1,21 @@
 package com.yunhwan.auth.error.domain.auth;
 
 public enum AuthErrorStatus {
-    NEW,
-    PROCESSING,
-    RETRY,
-    PROCESSED,
-    FAILED,
-    RESOLVED,
-    IGNORED
+    NEW(false),
+    PROCESSING(false),
+    RETRY(false),
+    PROCESSED(true),
+    FAILED(false),
+    RESOLVED(true),
+    IGNORED(true);
+
+    private final boolean terminal;
+
+    AuthErrorStatus(boolean terminal) {
+        this.terminal = terminal;
+    }
+
+    public boolean isTerminal() {
+        return terminal;
+    }
 }
