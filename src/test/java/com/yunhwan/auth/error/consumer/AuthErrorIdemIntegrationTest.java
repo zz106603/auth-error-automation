@@ -2,7 +2,8 @@ package com.yunhwan.auth.error.consumer;
 
 import com.yunhwan.auth.error.config.rabbitmq.RabbitTopologyConfig;
 import com.yunhwan.auth.error.consumer.persistence.ProcessedMessageRepository;
-import com.yunhwan.auth.error.support.AbstractIntegrationTest;
+import com.yunhwan.auth.error.stub.TestAuthErrorHandler;
+import com.yunhwan.auth.error.support.AbstractStubIntegrationTest;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -25,7 +26,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
  * 중복된 메시지가 도착했을 때 핸들러가 정확히 한 번만 실행되는지 확인합니다.
  */
 @DisplayName("RabbitMQ Consumer 멱등성 통합 테스트")
-class AuthErrorIdemIntegrationTest extends AbstractIntegrationTest {
+class AuthErrorIdemIntegrationTest extends AbstractStubIntegrationTest {
 
     @Autowired
     RabbitTemplate rabbitTemplate;

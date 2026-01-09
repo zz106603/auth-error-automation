@@ -4,11 +4,13 @@ import com.yunhwan.auth.error.domain.outbox.OutboxMessage;
 import com.yunhwan.auth.error.domain.outbox.OutboxStatus;
 import com.yunhwan.auth.error.outbox.persistence.OutboxMessageRepository;
 import com.yunhwan.auth.error.support.AbstractIntegrationTest;
+import com.yunhwan.auth.error.support.AbstractStubIntegrationTest;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.test.context.ActiveProfiles;
 
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
@@ -17,7 +19,7 @@ import java.util.List;
 import static org.assertj.core.api.Assertions.assertThat;
 
 @DisplayName("Outbox Reaper 통합 테스트")
-class OutboxReaperIntegrationTest extends AbstractIntegrationTest {
+class OutboxReaperIntegrationTest extends AbstractStubIntegrationTest {
 
     @Autowired
     OutboxPoller poller;
