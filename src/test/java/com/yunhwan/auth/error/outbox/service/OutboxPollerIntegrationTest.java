@@ -4,10 +4,12 @@ import com.yunhwan.auth.error.domain.outbox.OutboxMessage;
 import com.yunhwan.auth.error.domain.outbox.OutboxStatus;
 import com.yunhwan.auth.error.outbox.persistence.OutboxMessageRepository;
 import com.yunhwan.auth.error.support.AbstractIntegrationTest;
+import com.yunhwan.auth.error.support.AbstractStubIntegrationTest;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.test.context.ActiveProfiles;
 import org.springframework.transaction.support.TransactionTemplate;
 
 import java.time.OffsetDateTime;
@@ -20,7 +22,7 @@ import java.util.concurrent.*;
 import static org.assertj.core.api.Assertions.assertThat;
 
 @DisplayName("Outbox Poller 통합 테스트")
-class OutboxPollerIntegrationTest extends AbstractIntegrationTest {
+class OutboxPollerIntegrationTest extends AbstractStubIntegrationTest {
 
     @Autowired
     OutboxMessageRepository outboxMessageRepo;

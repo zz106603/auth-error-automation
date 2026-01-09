@@ -3,8 +3,8 @@ package com.yunhwan.auth.error.outbox.service;
 import com.yunhwan.auth.error.domain.outbox.OutboxMessage;
 import com.yunhwan.auth.error.domain.outbox.OutboxStatus;
 import com.yunhwan.auth.error.outbox.persistence.OutboxMessageRepository;
-import com.yunhwan.auth.error.outbox.publisher.TestOutboxPublisher;
-import com.yunhwan.auth.error.support.AbstractIntegrationTest;
+import com.yunhwan.auth.error.stub.TestOutboxPublisher;
+import com.yunhwan.auth.error.support.AbstractStubIntegrationTest;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -18,7 +18,7 @@ import java.util.Optional;
 import static org.assertj.core.api.Assertions.assertThat;
 
 @DisplayName("Outbox Processor 통합 테스트")
-class OutboxProcessorIntegrationTest extends AbstractIntegrationTest {
+class OutboxProcessorIntegrationTest extends AbstractStubIntegrationTest {
 
     @Autowired
     OutboxPoller poller;

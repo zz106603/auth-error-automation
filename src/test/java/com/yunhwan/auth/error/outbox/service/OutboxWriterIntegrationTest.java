@@ -3,15 +3,17 @@ package com.yunhwan.auth.error.outbox.service;
 import com.yunhwan.auth.error.outbox.dto.OutboxEnqueueCommand;
 import com.yunhwan.auth.error.outbox.persistence.OutboxMessageRepository;
 import com.yunhwan.auth.error.support.AbstractIntegrationTest;
+import com.yunhwan.auth.error.support.AbstractStubIntegrationTest;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.test.context.ActiveProfiles;
 
 import static org.assertj.core.api.AssertionsForClassTypes.assertThat;
 
 @DisplayName("Outbox Writer 통합 테스트")
-class OutboxWriterIntegrationTest extends AbstractIntegrationTest {
+class OutboxWriterIntegrationTest extends AbstractStubIntegrationTest {
 
     @Autowired
     OutboxWriter outboxWriter;
