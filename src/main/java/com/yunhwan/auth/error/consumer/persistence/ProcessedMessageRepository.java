@@ -11,6 +11,7 @@ public interface ProcessedMessageRepository extends JpaRepository<ProcessedMessa
 
     long count();
     boolean existsById(Long id);
+    boolean existsByOutboxId(Long outboxId);
 
     /**
      * outbox_id가 이미 있으면 아무것도 하지 않고 0을 반환.

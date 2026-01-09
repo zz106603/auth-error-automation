@@ -1,5 +1,6 @@
 package com.yunhwan.auth.error.consumer.listener;
 
+import com.yunhwan.auth.error.common.exception.NonRetryableAuthErrorException;
 import com.yunhwan.auth.error.config.rabbitmq.RabbitTopologyConfig;
 import com.rabbitmq.client.Channel;
 import com.yunhwan.auth.error.consumer.handler.AuthErrorHandler;
@@ -38,22 +39,24 @@ public class AuthErrorConsumer {
             @Header(name = "aggregateType", required = false) String aggregateType
     ) throws Exception {
 
+        log.info("[AuthErrorConsumer] received outboxId={}, payload={}", outboxId, payload);
+
         long tag = message.getMessageProperties().getDeliveryTag();
 
-        // 1) outboxId 없으면 메시지 형식 불량 → 운영상 DLQ 격리 권장
+        // 1) outboxId 없으면 메시지 형식 불량 → 즉시 DLQ 격리
         if (outboxId == null) {
-            log.warn("[AuthErrorConsumer] missing outboxId -> reject. payload={}", payload);
+            log.warn("[AuthErrorConsumer] missing outboxId -> reject(DLQ). payload={}", payload);
             channel.basicReject(tag, false);
             return;
         }
 
         // 2) Idempotency gate (처리 전에 먼저!)
-        int inserted = processedMessageRepo.insertIgnore(outboxId);
-        if (inserted == 0) {
-            log.info("[AuthErrorConsumer] duplicate message -> ack. outboxId={}", outboxId);
-            channel.basicAck(tag, false);
-            return;
-        }
+//        int inserted = processedMessageRepo.insertIgnore(outboxId);
+//        if (inserted == 0) {
+//            log.info("[AuthErrorConsumer] duplicate message -> ack. outboxId={}", outboxId);
+//            channel.basicAck(tag, false);
+//            return;
+//        }
 
         // 3) handler로 위임 (consumer는 얇게)
         try {
@@ -64,9 +67,22 @@ public class AuthErrorConsumer {
 
             handler.handle(payload, headers);
 
+            // 성공했을 때만 멱등성 기록
+            processedMessageRepo.insertIgnore(outboxId);
+
             channel.basicAck(tag, false);
+            return;
+
+        } catch (NonRetryableAuthErrorException e) {
+            // 재시도해도 의미 없는 케이스는 즉시 DLQ
+            log.error("[AuthErrorConsumer] NON-RETRYABLE -> DLQ outboxId={}, err={}",
+                    outboxId, e.getMessage(), e);
+
+            channel.basicReject(tag, false); // DLQ
+            return;
 
         } catch (Exception e) {
+            // 그 외는 retry 정책 적용
             int retry = getRetryCount(message);
 
             if (retry >= MAX_RETRY) {
@@ -110,7 +126,7 @@ public class AuthErrorConsumer {
             try {
                 return Integer.parseInt(s);
             } catch (NumberFormatException ignore) {
-                // It's not a number, fall through to default
+                // fall through
             }
         }
         return 0;
