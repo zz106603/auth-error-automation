@@ -5,6 +5,7 @@ import com.yunhwan.auth.error.domain.outbox.OutboxStatus;
 import com.yunhwan.auth.error.outbox.persistence.OutboxMessageRepository;
 import com.yunhwan.auth.error.stub.TestOutboxPublisher;
 import com.yunhwan.auth.error.support.AbstractStubIntegrationTest;
+import com.yunhwan.auth.error.support.OutboxFixtures;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -12,7 +13,6 @@ import org.springframework.beans.factory.annotation.Autowired;
 
 import java.time.Clock;
 import java.time.OffsetDateTime;
-import java.time.ZoneOffset;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -32,11 +32,8 @@ class OutboxProcessorIntegrationTest extends AbstractStubIntegrationTest {
     Clock clock;
     @Autowired
     TestOutboxPublisher testPublisher;
-
-    @BeforeEach
-    void setUp() {
-        repo.deleteAll();
-    }
+    @Autowired
+    OutboxFixtures fixtures;
 
     /**
      * 발행 성공 시나리오:
@@ -47,7 +44,7 @@ class OutboxProcessorIntegrationTest extends AbstractStubIntegrationTest {
     @DisplayName("메시지 발행 성공 시 상태를 PUBLISHED로 변경한다")
     void 메시지_발행_성공_시_상태를_PUBLISHED로_변경한다() {
         // given: PENDING 메시지 생성
-        OutboxMessage m = createMessage("REQ-1" + UUID.randomUUID(), "{\"val\":\"ok\"}");
+        OutboxMessage m = fixtures.createAuthErrorMessage("REQ-1" + UUID.randomUUID(), "{\"val\":\"ok\"}");
 
         // 발행 성공 설정
         testPublisher.failNext(false);
@@ -72,7 +69,7 @@ class OutboxProcessorIntegrationTest extends AbstractStubIntegrationTest {
     @DisplayName("메시지 발행 실패 시 재시도를 위해 상태를 PENDING으로 변경하고 재시도 정보를 업데이트한다")
     void 메시지_발행_실패_시_재시도를_위해_상태를_PENDING으로_변경하고_재시도_정보를_업데이트한다() {
         // given
-        OutboxMessage m = createMessage("REQ-FAIL" + UUID.randomUUID(), "{\"val\":\"fail\"}");
+        OutboxMessage m = fixtures.createAuthErrorMessage("REQ-FAIL" + UUID.randomUUID(), "{\"val\":\"fail\"}");
 
         // 발행 실패 설정
         testPublisher.failNext(true);
@@ -88,18 +85,7 @@ class OutboxProcessorIntegrationTest extends AbstractStubIntegrationTest {
         OutboxMessage msg = reloaded.get();
         assertThat(msg.getStatus()).isEqualTo(OutboxStatus.PENDING);
         assertThat(msg.getRetryCount()).isEqualTo(1);
-        assertThat(msg.getNextRetryAt()).isAfter(OffsetDateTime.now(ZoneOffset.UTC));
+        assertThat(msg.getNextRetryAt()).isAfter(OffsetDateTime.now(clock));
         assertThat(msg.getLastError()).contains("Test exception");
-    }
-
-    private OutboxMessage createMessage(String reqId, String payload) {
-        return repo.upsertReturning(
-                "AUTH_ERROR",
-                reqId,
-                "AUTH_ERROR_DETECTED_V1",
-                payload,
-                "AUTH_ERROR:" + reqId + ":AUTH_ERROR_DETECTED_V1",
-                OffsetDateTime.now(clock)
-        );
     }
 }

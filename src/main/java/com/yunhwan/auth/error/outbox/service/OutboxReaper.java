@@ -4,8 +4,10 @@ import com.yunhwan.auth.error.config.outbox.OutboxProperties;
 import com.yunhwan.auth.error.domain.outbox.OutboxMessage;
 import com.yunhwan.auth.error.outbox.persistence.OutboxMessageRepository;
 import com.yunhwan.auth.error.outbox.support.OutboxDecision;
+import com.yunhwan.auth.error.outbox.support.OutboxTestScope;
 import com.yunhwan.auth.error.outbox.support.api.RetryPolicy;
 import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -29,6 +31,12 @@ public class OutboxReaper {
     private final OutboxProperties outboxProperties;
     private final RetryPolicy retryPolicy;
     private final Clock clock;
+    private final ObjectProvider<OutboxTestScope> testScopeProvider;
+
+    private String scopePrefixOrNull() {
+        OutboxTestScope scope = testScopeProvider.getIfAvailable();
+        return scope == null ? null : scope.get();
+    }
 
     @Transactional
     public int reapOnce() {
@@ -39,7 +47,7 @@ public class OutboxReaper {
 
         OffsetDateTime staleBefore = now.minusSeconds(staleAfterSeconds);
 
-        List<OutboxMessage> stale = outboxMessageRepo.pickStaleProcessing(staleBefore, batchSize);
+        List<OutboxMessage> stale = outboxMessageRepo.pickStaleProcessing(staleBefore, batchSize, scopePrefixOrNull());
         if (stale.isEmpty()) return 0;
 
         int affected = 0;
