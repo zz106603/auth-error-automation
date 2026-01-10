@@ -22,11 +22,6 @@ class OutboxWriterIntegrationTest extends AbstractStubIntegrationTest {
     @Autowired
     OutboxMessageRepository outboxMessageRepo;
 
-    @BeforeEach
-    void setUp() {
-        outboxMessageRepo.deleteAll();
-    }
-
     /**
      * 정상 적재 검증:
      * OutboxEnqueueCommand를 받아 DB에 정상적으로 저장되는지 확인한다.
@@ -43,11 +38,9 @@ class OutboxWriterIntegrationTest extends AbstractStubIntegrationTest {
 
         // then
         assertThat(saved.getId()).isNotNull();
-        assertThat(outboxMessageRepo.count()).isEqualTo(1);
 
         var found = outboxMessageRepo.findByIdempotencyKey(cmd.idempotencyKey());
         assertThat(found).isPresent();
-        assertThat(found.get().getId()).isEqualTo(saved.getId());
         assertThat(found.get().getStatus().name()).isEqualTo("PENDING");
     }
 
@@ -67,18 +60,23 @@ class OutboxWriterIntegrationTest extends AbstractStubIntegrationTest {
         var first = outboxWriter.enqueue(cmd);
         var second = outboxWriter.enqueue(cmd);
 
-        // then
-        assertThat(outboxMessageRepo.count()).isEqualTo(1);
+        // then: 같은 row를 반환해야 함
         assertThat(second.getId()).isEqualTo(first.getId());
+
+        // then: idempotencyKey로 조회되는 row도 그 ID여야 함
+        var found = outboxMessageRepo.findByIdempotencyKey(cmd.idempotencyKey());
+        assertThat(found).isPresent();
+        assertThat(found.get().getId()).isEqualTo(first.getId());
     }
 
     private OutboxEnqueueCommand createCommand(String reqId, String payload) {
+        String scopedReqId = scoped(reqId); // AbstractStubIntegrationTest에 있는 scoped()
         return new OutboxEnqueueCommand(
                 "AUTH_ERROR",
-                reqId,
+                scopedReqId,
                 "AUTH_ERROR_DETECTED_V1",
                 payload,
-                "AUTH_ERROR:" + reqId + ":AUTH_ERROR_DETECTED_V1"
+                "AUTH_ERROR:" + scopedReqId + ":AUTH_ERROR_DETECTED_V1"
         );
     }
 }

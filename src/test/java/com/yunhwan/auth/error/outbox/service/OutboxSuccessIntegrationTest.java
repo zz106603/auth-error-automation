@@ -5,6 +5,7 @@ import com.yunhwan.auth.error.domain.outbox.OutboxStatus;
 import com.yunhwan.auth.error.outbox.persistence.OutboxMessageRepository;
 import com.yunhwan.auth.error.support.AbstractIntegrationTest;
 import com.yunhwan.auth.error.support.AbstractStubIntegrationTest;
+import com.yunhwan.auth.error.support.OutboxFixtures;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -23,20 +24,14 @@ class OutboxSuccessIntegrationTest extends AbstractStubIntegrationTest {
 
     @Autowired
     OutboxMessageRepository outboxMessageRepo;
-
     @Autowired
     OutboxPoller outboxPoller;
-
     @Autowired
     Clock clock;
-
     @Autowired
     OutboxProcessor outboxProcessor;
-
-    @BeforeEach
-    void setUp() {
-        outboxMessageRepo.deleteAll();
-    }
+    @Autowired
+    OutboxFixtures fixtures;
 
     /**
      * Happy Path 검증:
@@ -49,10 +44,12 @@ class OutboxSuccessIntegrationTest extends AbstractStubIntegrationTest {
     @DisplayName("메시지가 정상적으로 생성, 폴링, 발행되어 PUBLISHED 상태가 된다")
     void 메시지가_정상적으로_생성_폴링_발행되어_PUBLISHED_상태가_된다() {
         // given: DB에 outbox row 생성
-        OutboxMessage saved = createMessage("REQ-1" + UUID.randomUUID(), "{ \"error\": \"AUTH_FAILED\" }");
+        OutboxMessage saved = fixtures.createAuthErrorMessage("REQ-1" + UUID.randomUUID(), "{ \"error\": \"AUTH_FAILED\" }");
 
         // when: 폴링 및 처리
         List<OutboxMessage> claimed = outboxPoller.pollOnce();
+        assertThat(claimed).hasSize(1);
+
         outboxProcessor.process(claimed);
 
         // then: 최종 상태 검증
@@ -65,16 +62,5 @@ class OutboxSuccessIntegrationTest extends AbstractStubIntegrationTest {
         assertThat(after.getProcessingStartedAt()).isNull();
         assertThat(after.getLastError()).isNull();
         assertThat(after.getNextRetryAt()).isNull();
-    }
-
-    private OutboxMessage createMessage(String reqId, String payload) {
-        return outboxMessageRepo.upsertReturning(
-                "AUTH_ERROR",
-                reqId,
-                "AUTH_ERROR_DETECTED_V1",
-                payload,
-                "AUTH_ERROR:" + reqId + ":V1",
-                OffsetDateTime.now(clock)
-        );
     }
 }

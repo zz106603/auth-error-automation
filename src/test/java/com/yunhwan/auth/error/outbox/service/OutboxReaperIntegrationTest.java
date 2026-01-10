@@ -5,6 +5,7 @@ import com.yunhwan.auth.error.domain.outbox.OutboxStatus;
 import com.yunhwan.auth.error.outbox.persistence.OutboxMessageRepository;
 import com.yunhwan.auth.error.support.AbstractIntegrationTest;
 import com.yunhwan.auth.error.support.AbstractStubIntegrationTest;
+import com.yunhwan.auth.error.support.OutboxFixtures;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -33,11 +34,8 @@ class OutboxReaperIntegrationTest extends AbstractStubIntegrationTest {
     OutboxMessageRepository repo;
     @Autowired
     JdbcTemplate jdbcTemplate;
-
-    @BeforeEach
-    void setUp() {
-        repo.deleteAll();
-    }
+    @Autowired
+    OutboxFixtures fixtures;
 
     /**
      * Stale 메시지 복구 검증:
@@ -49,7 +47,7 @@ class OutboxReaperIntegrationTest extends AbstractStubIntegrationTest {
     @DisplayName("오랫동안 처리중인(Stale) 메시지는 PENDING 상태로 복구되고 재시도 정보가 갱신된다")
     void 오랫동안_처리중인_메시지는_PENDING_상태로_복구되고_재시도_정보가_갱신된다() {
         // given: 메시지 생성
-        OutboxMessage m = createMessage("REQ-STUCK" + UUID.randomUUID(), "{\"val\":\"x\"}");
+        OutboxMessage m = fixtures.createAuthErrorMessage("REQ-STUCK" + UUID.randomUUID(), "{\"val\":\"x\"}");
 
         // poller가 claim해서 PROCESSING 상태로 만든다
         List<OutboxMessage> claimed = poller.pollOnce();
@@ -59,7 +57,7 @@ class OutboxReaperIntegrationTest extends AbstractStubIntegrationTest {
         assertThat(processing.getStatus()).isEqualTo(OutboxStatus.PROCESSING);
 
         // processing_started_at을 "충분히 과거"로 만들어 stale 처리되게 함 (10분 전)
-        OffsetDateTime past = OffsetDateTime.now(ZoneOffset.UTC).minusMinutes(10);
+        OffsetDateTime past = OffsetDateTime.now(clock).minusMinutes(10);
         jdbcTemplate.update(
                 "update outbox_message set processing_started_at = ?, updated_at = now() where id = ?",
                 past, m.getId()
@@ -75,22 +73,11 @@ class OutboxReaperIntegrationTest extends AbstractStubIntegrationTest {
         assertThat(after.getStatus()).isEqualTo(OutboxStatus.PENDING);
         assertThat(after.getRetryCount()).isEqualTo(1);
         assertThat(after.getNextRetryAt()).isNotNull();
-        assertThat(after.getNextRetryAt()).isAfter(OffsetDateTime.now(ZoneOffset.UTC));
+        assertThat(after.getNextRetryAt()).isAfter(OffsetDateTime.now(clock));
         assertThat(after.getLastError()).contains("STALE_PROCESSING");
 
         // PROCESSING 필드 정리됐는지 확인
         assertThat(after.getProcessingOwner()).isNull();
         assertThat(after.getProcessingStartedAt()).isNull();
-    }
-
-    private OutboxMessage createMessage(String reqId, String payload) {
-        return repo.upsertReturning(
-                "AUTH_ERROR",
-                reqId,
-                "AUTH_ERROR_DETECTED_V1",
-                payload,
-                "AUTH_ERROR:" + reqId + ":AUTH_ERROR_DETECTED_V1",
-                OffsetDateTime.now(clock)
-        );
     }
 }
