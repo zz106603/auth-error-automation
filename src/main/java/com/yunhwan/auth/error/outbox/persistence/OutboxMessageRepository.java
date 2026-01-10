@@ -51,6 +51,7 @@ public interface OutboxMessageRepository extends JpaRepository<OutboxMessage, Lo
           FROM outbox_message
           WHERE status = 'PENDING'
             AND (next_retry_at IS NULL OR next_retry_at <= :now)
+            AND (:scopePrefix IS NULL OR aggregate_id LIKE CONCAT(:scopePrefix, '%'))
           ORDER BY COALESCE(next_retry_at, created_at), created_at
           LIMIT :batchSize
           FOR UPDATE SKIP LOCKED
@@ -67,7 +68,8 @@ public interface OutboxMessageRepository extends JpaRepository<OutboxMessage, Lo
     List<OutboxMessage> claimBatch(
             @Param("batchSize") int batchSize,
             @Param("owner") String owner,
-            @Param("now") OffsetDateTime now
+            @Param("now") OffsetDateTime now,
+            @Param("scopePrefix") String scopePrefix
     );
 
     // 테스트용: next_retry_at 세팅 (운영 코드에서도 retry 처리 시 쓰게 됨)
@@ -150,12 +152,14 @@ public interface OutboxMessageRepository extends JpaRepository<OutboxMessage, Lo
      where status = 'PROCESSING'
        and processing_started_at is not null
        and processing_started_at <= :staleBefore
+       and (:scopePrefix IS NULL OR aggregate_id LIKE CONCAT(:scopePrefix, '%'))
      order by processing_started_at asc
      limit :batchSize
      for update skip locked
     """, nativeQuery = true)
     List<OutboxMessage> pickStaleProcessing(
             @Param("staleBefore") OffsetDateTime staleBefore,
-            @Param("batchSize") int batchSize
+            @Param("batchSize") int batchSize,
+            @Param("scopePrefix") String scopePrefix
     );
 }
