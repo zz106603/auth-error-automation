@@ -21,7 +21,7 @@ public class TestOutboxPublisher implements OutboxPublisher {
 
     @Override
     public void publish(OutboxMessage message) {
-        if (shouldFail.get()) {
+        if (shouldFail.getAndSet(false)) {
             throw new RuntimeException("Test exception");
         }
     }
