@@ -6,6 +6,7 @@ import com.yunhwan.auth.error.outbox.service.OutboxPoller;
 import com.yunhwan.auth.error.outbox.service.OutboxProcessor;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.context.annotation.Profile;
 import org.springframework.scheduling.TaskScheduler;
 import org.springframework.scheduling.annotation.SchedulingConfigurer;
 import org.springframework.scheduling.config.ScheduledTaskRegistrar;
@@ -13,6 +14,7 @@ import org.springframework.stereotype.Component;
 
 import java.util.List;
 
+@Profile("!test")
 @Slf4j
 @Component
 @RequiredArgsConstructor
