@@ -2,6 +2,8 @@ package com.yunhwan.auth.error.consumer;
 
 import com.yunhwan.auth.error.config.rabbitmq.RabbitTopologyConfig;
 import com.yunhwan.auth.error.consumer.persistence.ProcessedMessageRepository;
+import com.yunhwan.auth.error.domain.consumer.ProcessedMessage;
+import com.yunhwan.auth.error.domain.consumer.ProcessedStatus;
 import com.yunhwan.auth.error.stub.TestAuthErrorHandler;
 import com.yunhwan.auth.error.support.AbstractStubIntegrationTest;
 import org.junit.jupiter.api.BeforeEach;
@@ -17,8 +19,7 @@ import org.springframework.boot.test.context.SpringBootTest;
 import java.time.Duration;
 
 import static org.awaitility.Awaitility.await;
-import static org.junit.Assert.assertTrue;
-import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.*;
 
 /**
  * RabbitMQ Consumer의 멱등성(Idempotency)을 검증하는 통합 테스트입니다.
@@ -56,29 +57,35 @@ class AuthErrorIdemIntegrationTest extends AbstractStubIntegrationTest {
     }
 
     @Test
-    @DisplayName("동일한 outboxId를 가진 메시지가 2번 전송되면 핸들러는 1번만 실행되어야 한다")
-    void 동일한_OutboxID_메시지_중복수신시_핸들러는_한번만_실행된다() {
+    @DisplayName("동일한 outboxId를 가진 메시지가 2번 전송되면 핸들러는 1번만 실행 + DONE 확정")
+    void 동일한_OutboxID_메시지_중복수신시_핸들러는_한번만_실행된다_그리고_DONE이어야한다() {
         // given
         long outboxId = System.nanoTime();
         Message m1 = createMessage(outboxId);
-        Message m2 = createMessage(outboxId); // 동일한 ID를 가진 중복 메시지
+        Message m2 = createMessage(outboxId);
 
         // when
         rabbitTemplate.send(RabbitTopologyConfig.EXCHANGE, RabbitTopologyConfig.ROUTING_KEY, m1);
         rabbitTemplate.send(RabbitTopologyConfig.EXCHANGE, RabbitTopologyConfig.ROUTING_KEY, m2);
 
         // then
-        // 비동기 Consumer 처리를 기다립니다.
-        // Awaitility를 사용하여 최대 2초간 대기하며, 조건이 만족되면 즉시 테스트를 통과시킵니다.
+        // 1) 핸들러는 정확히 1번만 실행
         await().atMost(Duration.ofSeconds(2))
                 .untilAsserted(() -> assertEquals(1, testAuthErrorHandler.getCallCount()));
-
-        // 최종적으로 핸들러가 정확히 1번만 호출되었는지 재확인 (혹시 모를 추가 호출 방지)
         assertEquals(1, testAuthErrorHandler.getCallCount());
 
-        // 멱등성: processed_message도 1건만
+        // 2) processed_message는 1건만 존재
         assertTrue(processedMessageRepo.existsById(outboxId));
         assertEquals(1L, processedMessageRepo.count());
+
+        // 3) 최종 상태가 DONE인지 검증
+        await().atMost(Duration.ofSeconds(2)).untilAsserted(() -> {
+            ProcessedMessage pm = processedMessageRepo.findById(outboxId).orElseThrow();
+
+            assertEquals(ProcessedStatus.DONE, pm.getStatus());
+            assertNotNull(pm.getProcessedAt());
+            assertNull(pm.getLeaseUntil());
+        });
     }
 
     private Message createMessage(long outboxId) {
