@@ -12,6 +12,7 @@ import org.springframework.amqp.core.MessageBuilder;
 import org.springframework.amqp.core.MessageProperties;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.context.SpringBootTest;
 
 import java.time.Duration;
 
@@ -25,6 +26,10 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
  * 실제 운영 환경과 유사하게 RabbitMQ를 띄우고 메시지를 발행하여,
  * 중복된 메시지가 도착했을 때 핸들러가 정확히 한 번만 실행되는지 확인합니다.
  */
+@SpringBootTest(properties = {
+        "spring.rabbitmq.listener.simple.auto-startup=true",
+        "spring.rabbitmq.listener.direct.auto-startup=true"
+})
 @DisplayName("RabbitMQ Consumer 멱등성 통합 테스트")
 class AuthErrorIdemIntegrationTest extends AbstractStubIntegrationTest {
 
@@ -46,15 +51,15 @@ class AuthErrorIdemIntegrationTest extends AbstractStubIntegrationTest {
 
     @BeforeEach
     void setUp() {
-        // 각 테스트 실행 전 카운터 초기화
         testAuthErrorHandler.reset();
+        processedMessageRepo.deleteAll();
     }
 
     @Test
     @DisplayName("동일한 outboxId를 가진 메시지가 2번 전송되면 핸들러는 1번만 실행되어야 한다")
     void 동일한_OutboxID_메시지_중복수신시_핸들러는_한번만_실행된다() {
         // given
-        long outboxId = 777L;
+        long outboxId = System.nanoTime();
         Message m1 = createMessage(outboxId);
         Message m2 = createMessage(outboxId); // 동일한 ID를 가진 중복 메시지
 
