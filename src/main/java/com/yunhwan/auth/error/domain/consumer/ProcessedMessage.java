@@ -1,9 +1,6 @@
 package com.yunhwan.auth.error.domain.consumer;
 
-import jakarta.persistence.Column;
-import jakarta.persistence.Entity;
-import jakarta.persistence.Id;
-import jakarta.persistence.Table;
+import jakarta.persistence.*;
 import lombok.AccessLevel;
 import lombok.AllArgsConstructor;
 import lombok.Getter;
@@ -22,7 +19,17 @@ public class ProcessedMessage {
     @Column(name = "outbox_id")
     private Long outboxId;
 
-    @Column(name = "processed_at", nullable = false)
-    private OffsetDateTime processedAt;
+    @Enumerated(EnumType.STRING)
+    @Column(name = "status", nullable = false)
+    private ProcessedStatus status; // "PROCESSING" | "DONE"
+
+    @Column(name = "lease_until")
+    private OffsetDateTime leaseUntil;
+
+    @Column(name = "processed_at")
+    private OffsetDateTime processedAt; // DONE 확정 시점
+
+    @Column(name = "updated_at", nullable = false)
+    private OffsetDateTime updatedAt;
 
 }
