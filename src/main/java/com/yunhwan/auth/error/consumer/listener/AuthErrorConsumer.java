@@ -14,6 +14,8 @@ import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.messaging.handler.annotation.Header;
 import org.springframework.stereotype.Component;
 
+import java.time.Duration;
+import java.time.OffsetDateTime;
 import java.util.HashMap;
 import java.util.Map;
 
@@ -24,6 +26,9 @@ public class AuthErrorConsumer {
 
     private static final int MAX_RETRY = 3;
     private static final String RETRY_HEADER = "x-retry-count";
+
+    // lease 시간(60초)
+    private static final Duration LEASE_DURATION = Duration.ofSeconds(60);
 
     private final RabbitTemplate rabbitTemplate;
     private final AuthErrorHandler handler;
@@ -50,10 +55,14 @@ public class AuthErrorConsumer {
             return;
         }
 
-        // 2) 선점 (이미 처리된 메시지면 여기서 컷)
-        int firstTime = processedMessageRepo.insertIgnore(outboxId);
-        if (firstTime == 0) {
-            channel.basicAck(tag, false);  // 중복이므로 조용히 ACK
+        OffsetDateTime now = OffsetDateTime.now();
+        OffsetDateTime leaseUntil = now.plusSeconds(LEASE_DURATION.getSeconds());
+
+        // 2) 선점(lease 만료된 PROCESSING만 재선점 가능)
+        int claimed = processedMessageRepo.claimProcessing(outboxId, now, leaseUntil);
+        if (claimed == 0) {
+            // 누군가 처리 중(lease 유효) 또는 이미 DONE
+            channel.basicAck(tag, false);
             return;
         }
 
@@ -65,6 +74,9 @@ public class AuthErrorConsumer {
             headers.put("aggregateType", aggregateType);
 
             handler.handle(payload, headers);
+
+            // 2) 성공 시 DONE 확정
+            processedMessageRepo.markDone(outboxId, OffsetDateTime.now());
 
             channel.basicAck(tag, false);
             return;

@@ -7,6 +7,8 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.OffsetDateTime;
+
 public interface ProcessedMessageRepository extends JpaRepository<ProcessedMessage, Long> {
 
     long count();
@@ -14,15 +16,43 @@ public interface ProcessedMessageRepository extends JpaRepository<ProcessedMessa
     boolean existsByOutboxId(Long outboxId);
 
     /**
-     * outbox_id가 이미 있으면 아무것도 하지 않고 0을 반환.
-     * 처음이면 insert 되고 1을 반환.
+     * 선점(claim):
+     * - row가 없으면 새로 만들어 PROCESSING + lease 설정
+     * - row가 있는데 DONE이면 선점 실패(0)
+     * - row가 PROCESSING이라도 lease가 만료됐으면 lease 갱신하며 선점 성공(1)
+     * - row가 PROCESSING인데 lease가 아직 유효하면 선점 실패(0)
      */
     @Transactional
     @Modifying
     @Query(value = """
-        insert into processed_message(outbox_id)
-        values (:outboxId)
-        on conflict (outbox_id) do nothing
+        insert into processed_message(outbox_id, status, lease_until, updated_at)
+        values (:outboxId, 'PROCESSING', :leaseUntil, :now)
+        on conflict (outbox_id) do update
+           set status = 'PROCESSING',
+               lease_until = :leaseUntil,
+               updated_at = :now
+         where processed_message.status = 'PROCESSING'
+           and (processed_message.lease_until is null or processed_message.lease_until <= :now)
         """, nativeQuery = true)
-    int insertIgnore(@Param("outboxId") long outboxId);
+    int claimProcessing(@Param("outboxId") long outboxId,
+                        @Param("now") OffsetDateTime now,
+                        @Param("leaseUntil") OffsetDateTime leaseUntil);
+
+    /**
+     * 완료 확정(DONE):
+     * - PROCESSING인 row만 DONE으로 변경 (이미 DONE이면 0)
+     */
+    @Transactional
+    @Modifying
+    @Query(value = """
+        update processed_message
+           set status = 'DONE',
+               processed_at = :now,
+               lease_until = null,
+               updated_at = :now
+         where outbox_id = :outboxId
+           and status = 'PROCESSING'
+        """, nativeQuery = true)
+    int markDone(@Param("outboxId") long outboxId,
+                 @Param("now") OffsetDateTime now);
 }
