@@ -12,7 +12,12 @@ import java.time.OffsetDateTime;
 @Entity
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 @AllArgsConstructor(access = AccessLevel.PROTECTED)
-@Table(name = "processed_message")
+@Table(
+        name = "processed_message",
+        indexes = {
+            @Index(name = "idx_processed_message_processing_lease", columnList = "lease_until"),
+        }
+)
 public class ProcessedMessage {
 
     @Id
