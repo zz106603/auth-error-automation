@@ -50,6 +50,13 @@ public class AuthErrorConsumer {
             return;
         }
 
+        // 2) 선점 (이미 처리된 메시지면 여기서 컷)
+        int firstTime = processedMessageRepo.insertIgnore(outboxId);
+        if (firstTime == 0) {
+            channel.basicAck(tag, false);  // 중복이므로 조용히 ACK
+            return;
+        }
+
         // 3) handler로 위임 (consumer는 얇게)
         try {
             Map<String, Object> headers = new HashMap<>();
@@ -58,9 +65,6 @@ public class AuthErrorConsumer {
             headers.put("aggregateType", aggregateType);
 
             handler.handle(payload, headers);
-
-            // 성공했을 때만 멱등성 기록
-            processedMessageRepo.insertIgnore(outboxId);
 
             channel.basicAck(tag, false);
             return;
