@@ -5,6 +5,7 @@ import com.yunhwan.auth.error.config.rabbitmq.RabbitTopologyConfig;
 import com.rabbitmq.client.Channel;
 import com.yunhwan.auth.error.consumer.handler.AuthErrorHandler;
 import com.yunhwan.auth.error.consumer.persistence.ProcessedMessageRepository;
+import com.yunhwan.auth.error.domain.consumer.ProcessedStatus;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.amqp.core.Message;
@@ -59,7 +60,8 @@ public class AuthErrorConsumer {
         OffsetDateTime leaseUntil = now.plusSeconds(LEASE_DURATION.getSeconds());
 
         // 2) 선점(lease 만료된 PROCESSING만 재선점 가능)
-        int claimed = processedMessageRepo.claimProcessing(outboxId, now, leaseUntil);
+        int claimed = processedMessageRepo.claimProcessing(outboxId, now, leaseUntil, ProcessedStatus.PROCESSING.name());
+
         if (claimed == 0) {
             // 누군가 처리 중(lease 유효) 또는 이미 DONE
             channel.basicAck(tag, false);
@@ -76,7 +78,7 @@ public class AuthErrorConsumer {
             handler.handle(payload, headers);
 
             // 2) 성공 시 DONE 확정
-            processedMessageRepo.markDone(outboxId, OffsetDateTime.now());
+            processedMessageRepo.markDone(outboxId, OffsetDateTime.now(), ProcessedStatus.DONE.name(), ProcessedStatus.PROCESSING.name());
 
             channel.basicAck(tag, false);
             return;
