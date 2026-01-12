@@ -26,17 +26,18 @@ public interface ProcessedMessageRepository extends JpaRepository<ProcessedMessa
     @Modifying
     @Query(value = """
         insert into processed_message(outbox_id, status, lease_until, updated_at)
-        values (:outboxId, 'PROCESSING', :leaseUntil, :now)
+        values (:outboxId, :status, :leaseUntil, :now)
         on conflict (outbox_id) do update
-           set status = 'PROCESSING',
+           set status = :status,
                lease_until = :leaseUntil,
                updated_at = :now
-         where processed_message.status = 'PROCESSING'
+         where processed_message.status = :status
            and (processed_message.lease_until is null or processed_message.lease_until <= :now)
         """, nativeQuery = true)
     int claimProcessing(@Param("outboxId") long outboxId,
                         @Param("now") OffsetDateTime now,
-                        @Param("leaseUntil") OffsetDateTime leaseUntil);
+                        @Param("leaseUntil") OffsetDateTime leaseUntil,
+                        @Param("status") String status);
 
     /**
      * 완료 확정(DONE):
@@ -46,13 +47,15 @@ public interface ProcessedMessageRepository extends JpaRepository<ProcessedMessa
     @Modifying
     @Query(value = """
         update processed_message
-           set status = 'DONE',
+           set status = :doneStatus,
                processed_at = :now,
                lease_until = null,
                updated_at = :now
          where outbox_id = :outboxId
-           and status = 'PROCESSING'
+           and status = :processingStatus
         """, nativeQuery = true)
     int markDone(@Param("outboxId") long outboxId,
-                 @Param("now") OffsetDateTime now);
+                 @Param("now") OffsetDateTime now,
+                 @Param("doneStatus") String doneStatus,
+                 @Param("processingStatus") String processingStatus);
 }
