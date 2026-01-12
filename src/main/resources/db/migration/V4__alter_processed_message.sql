@@ -13,5 +13,5 @@ alter table processed_message
 
 -- 3) outbox_id는 PK(이미 그렇게 쓰고 있다 가정)
 -- 4) 성능용 인덱스(선점/만료 스캔)
-create index if not exists idx_processed_message_status_lease
-    on processed_message(status, lease_until);
+create index if not exists idx_processed_message_processing_lease
+    on processed_message(lease_until) where status = 'PROCESSING';
