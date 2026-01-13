@@ -32,7 +32,7 @@ import static org.junit.jupiter.api.Assertions.*;
         "spring.rabbitmq.listener.direct.auto-startup=true"
 })
 @DisplayName("RabbitMQ Consumer 멱등성 통합 테스트")
-class AuthErrorIdemIntegrationTest extends AbstractStubIntegrationTest {
+class AuthErrorConsumerIdemIntegrationTest extends AbstractStubIntegrationTest {
 
     @Autowired
     RabbitTemplate rabbitTemplate;
