@@ -5,6 +5,7 @@ import com.yunhwan.auth.error.config.rabbitmq.RabbitTopologyConfig;
 import com.rabbitmq.client.Channel;
 import com.yunhwan.auth.error.consumer.handler.AuthErrorHandler;
 import com.yunhwan.auth.error.consumer.persistence.ProcessedMessageRepository;
+import com.yunhwan.auth.error.consumer.util.HeaderUtils;
 import com.yunhwan.auth.error.domain.consumer.ProcessedStatus;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -74,7 +75,7 @@ public class AuthErrorConsumer {
             headers.put("outboxId", outboxId);
             headers.put("eventType", eventType);
             headers.put("aggregateType", aggregateType);
-            headers.put(RETRY_HEADER, getRetryCount(message));
+            headers.put(RETRY_HEADER, HeaderUtils.getRetryCount(message.getMessageProperties().getHeaders()));
 
             handler.handle(payload, headers);
 
@@ -94,7 +95,7 @@ public class AuthErrorConsumer {
 
         } catch (Exception e) {
             // 그 외는 retry 정책 적용
-            int retry = getRetryCount(message);
+            int retry = HeaderUtils.getRetryCount(message.getMessageProperties().getHeaders());
 
             if (retry >= MAX_RETRY) {
                 log.error("[AuthErrorConsumer] FAIL -> DLQ outboxId={}, retry={}, err={}",
@@ -133,20 +134,5 @@ public class AuthErrorConsumer {
             // 원본 메시지는 ACK 처리(중복 재전달 방지)
             channel.basicAck(tag, false);
         }
-    }
-
-    private int getRetryCount(Message message) {
-        Object v = message.getMessageProperties().getHeaders().get(RETRY_HEADER);
-        if (v instanceof Number num) {
-            return num.intValue();
-        }
-        if (v instanceof String s) {
-            try {
-                return Integer.parseInt(s);
-            } catch (NumberFormatException ignore) {
-                // fall through
-            }
-        }
-        return 0;
     }
 }

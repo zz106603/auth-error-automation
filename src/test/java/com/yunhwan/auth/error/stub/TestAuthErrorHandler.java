@@ -1,6 +1,7 @@
 package com.yunhwan.auth.error.stub;
 
 import com.yunhwan.auth.error.consumer.handler.AuthErrorHandler;
+import com.yunhwan.auth.error.consumer.util.HeaderUtils;
 import org.springframework.context.annotation.Primary;
 import org.springframework.context.annotation.Profile;
 import org.springframework.stereotype.Component;
@@ -32,7 +33,7 @@ public class TestAuthErrorHandler implements AuthErrorHandler {
         callCount.incrementAndGet();
 
         // retry header 기록 (없으면 0)
-        int retry = extractRetryCount(headers);
+        int retry = HeaderUtils.getRetryCount(headers);
         maxRetrySeen.accumulateAndGet(retry, Math::max);
 
         // 기존 성공 로직 전에 실패 주입
@@ -65,15 +66,5 @@ public class TestAuthErrorHandler implements AuthErrorHandler {
         callCount.set(0);
         failRemaining.set(0);
         maxRetrySeen.set(0);
-    }
-
-    private int extractRetryCount(Map<String, Object> headers) {
-        if (headers == null) return 0;
-        Object v = headers.get("x-retry-count"); // Consumer에서 사용하는 헤더 키와 동일
-        if (v instanceof Number n) return n.intValue();
-        if (v instanceof String s) {
-            try { return Integer.parseInt(s); } catch (NumberFormatException ignore) {}
-        }
-        return 0;
     }
 }
