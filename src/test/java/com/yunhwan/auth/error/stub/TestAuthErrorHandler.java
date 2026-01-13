@@ -21,11 +21,33 @@ public class TestAuthErrorHandler implements AuthErrorHandler {
 
     // 멀티스레드 환경(RabbitMQ Consumer)에서도 안전하게 카운팅하기 위해 AtomicInteger 사용
     private final AtomicInteger callCount = new AtomicInteger(0);
+    // 첫 N번 실패용
+    private final AtomicInteger failRemaining = new AtomicInteger(0);
+    // 재시도 헤더 관측용
+    private final AtomicInteger maxRetrySeen = new AtomicInteger(0);
 
     @Override
     public void handle(String payload, Map<String, Object> headers) {
         // 실제 로직 없이 호출 횟수만 증가
         callCount.incrementAndGet();
+
+        // retry header 기록 (없으면 0)
+        int retry = extractRetryCount(headers);
+        maxRetrySeen.accumulateAndGet(retry, Math::max);
+
+        // 기존 성공 로직 전에 실패 주입
+        if (failRemaining.get() > 0) {
+            failRemaining.decrementAndGet();
+            throw new RuntimeException("TEST_FAIL");
+        }
+    }
+
+    public void failFirst(int n) {
+        failRemaining.set(n);
+    }
+
+    public int getMaxRetrySeen() {
+        return maxRetrySeen.get();
     }
 
     /**
@@ -41,5 +63,17 @@ public class TestAuthErrorHandler implements AuthErrorHandler {
      */
     public void reset() {
         callCount.set(0);
+        failRemaining.set(0);
+        maxRetrySeen.set(0);
+    }
+
+    private int extractRetryCount(Map<String, Object> headers) {
+        if (headers == null) return 0;
+        Object v = headers.get("x-retry-count"); // Consumer에서 사용하는 헤더 키와 동일
+        if (v instanceof Number n) return n.intValue();
+        if (v instanceof String s) {
+            try { return Integer.parseInt(s); } catch (NumberFormatException ignore) {}
+        }
+        return 0;
     }
 }
