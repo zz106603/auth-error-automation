@@ -58,4 +58,17 @@ public interface ProcessedMessageRepository extends JpaRepository<ProcessedMessa
                  @Param("now") OffsetDateTime now,
                  @Param("doneStatus") String doneStatus,
                  @Param("processingStatus") String processingStatus);
+
+    @Transactional
+    @Modifying
+    @Query(value = """
+    update processed_message
+       set lease_until = :now,
+           updated_at = :now
+     where outbox_id = :outboxId
+       and status = :status
+    """, nativeQuery = true)
+    int releaseLeaseForRetry(@Param("outboxId") long outboxId,
+                             @Param("now") OffsetDateTime now,
+                             @Param("status") String status);
 }

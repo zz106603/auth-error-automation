@@ -74,6 +74,7 @@ public class AuthErrorConsumer {
             headers.put("outboxId", outboxId);
             headers.put("eventType", eventType);
             headers.put("aggregateType", aggregateType);
+            headers.put(RETRY_HEADER, getRetryCount(message));
 
             handler.handle(payload, headers);
 
@@ -105,6 +106,13 @@ public class AuthErrorConsumer {
             int nextRetry = retry + 1;
             log.warn("[AuthErrorConsumer] FAIL -> RETRY outboxId={}, retry={}/{} err={}",
                     outboxId, nextRetry, MAX_RETRY, e.getMessage());
+
+            // lease 즉시 만료시켜서 10초 뒤 retry 메시지가 선점 가능하게
+            processedMessageRepo.releaseLeaseForRetry(
+                    outboxId,
+                    now,
+                    ProcessedStatus.PROCESSING.name()
+            );
 
             // Retry Exchange로 다시 발행 (헤더 유지 + retry 증가)
             rabbitTemplate.convertAndSend(
