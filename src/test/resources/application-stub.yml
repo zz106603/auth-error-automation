@@ -6,5 +6,7 @@ spring:
     listener:
       simple:
         auto-startup: false
+        acknowledge-mode: manual
       direct:
         auto-startup: false
+        acknowledge-mode: manual

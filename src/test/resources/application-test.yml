@@ -35,6 +35,7 @@ spring:
     listener:
       simple:
         auto-startup: true
+        acknowledge-mode: manual
 
 # === Outbox 테스트 튜닝 ===
 outbox:
