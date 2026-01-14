@@ -1,12 +1,13 @@
 package com.yunhwan.auth.error.consumer.listener;
 
-import com.yunhwan.auth.error.common.exception.NonRetryableAuthErrorException;
-import com.yunhwan.auth.error.config.rabbitmq.RabbitTopologyConfig;
 import com.rabbitmq.client.Channel;
+import com.yunhwan.auth.error.config.rabbitmq.RabbitTopologyConfig;
+import com.yunhwan.auth.error.consumer.decision.ConsumerDecisionMaker;
 import com.yunhwan.auth.error.consumer.handler.AuthErrorHandler;
 import com.yunhwan.auth.error.consumer.persistence.ProcessedMessageRepository;
 import com.yunhwan.auth.error.consumer.util.HeaderUtils;
 import com.yunhwan.auth.error.domain.consumer.ProcessedStatus;
+import com.yunhwan.auth.error.outbox.support.OutboxDecision;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.amqp.core.Message;
@@ -26,15 +27,13 @@ import java.util.Map;
 @RequiredArgsConstructor
 public class AuthErrorConsumer {
 
-    private static final int MAX_RETRY = 3;
     private static final String RETRY_HEADER = "x-retry-count";
-
-    // lease 시간(60초)
     private static final Duration LEASE_DURATION = Duration.ofSeconds(60);
 
     private final RabbitTemplate rabbitTemplate;
     private final AuthErrorHandler handler;
     private final ProcessedMessageRepository processedMessageRepo;
+    private final ConsumerDecisionMaker decisionMaker;
 
     @RabbitListener(queues = RabbitTopologyConfig.QUEUE)
     public void onMessage(
@@ -46,11 +45,9 @@ public class AuthErrorConsumer {
             @Header(name = "aggregateType", required = false) String aggregateType
     ) throws Exception {
 
-        log.info("[AuthErrorConsumer] received outboxId={}, payload={}", outboxId, payload);
-
         long tag = message.getMessageProperties().getDeliveryTag();
 
-        // 1) outboxId 없으면 메시지 형식 불량 → 즉시 DLQ 격리
+        // 1) outboxId 없으면 형식 불량 → DLQ 격리
         if (outboxId == null) {
             log.warn("[AuthErrorConsumer] missing outboxId -> reject(DLQ). payload={}", payload);
             channel.basicReject(tag, false);
@@ -60,79 +57,100 @@ public class AuthErrorConsumer {
         OffsetDateTime now = OffsetDateTime.now();
         OffsetDateTime leaseUntil = now.plusSeconds(LEASE_DURATION.getSeconds());
 
-        // 2) 선점(lease 만료된 PROCESSING만 재선점 가능)
-        int claimed = processedMessageRepo.claimProcessing(outboxId, now, leaseUntil, ProcessedStatus.PROCESSING.name());
-
+        // 2) 선점
+        int claimed = processedMessageRepo.claimProcessing(
+                outboxId, now, leaseUntil,
+                ProcessedStatus.PROCESSING.name()
+        );
         if (claimed == 0) {
             // 누군가 처리 중(lease 유효) 또는 이미 DONE
             channel.basicAck(tag, false);
             return;
         }
 
-        // 3) handler로 위임 (consumer는 얇게)
+        int currentRetry = HeaderUtils.getRetryCount(message.getMessageProperties().getHeaders());
+
         try {
-            Map<String, Object> headers = new HashMap<>();
-            headers.put("outboxId", outboxId);
-            headers.put("eventType", eventType);
-            headers.put("aggregateType", aggregateType);
-            headers.put(RETRY_HEADER, HeaderUtils.getRetryCount(message.getMessageProperties().getHeaders()));
+            // 3) handler 위임
+            handler.handle(payload, buildHeaders(outboxId, eventType, aggregateType, currentRetry));
 
-            handler.handle(payload, headers);
-
-            // 2) 성공 시 DONE 확정
-            processedMessageRepo.markDone(outboxId, OffsetDateTime.now(), ProcessedStatus.DONE.name(), ProcessedStatus.PROCESSING.name());
+            // 4) 성공 확정
+            processedMessageRepo.markDone(
+                    outboxId, OffsetDateTime.now(),
+                    ProcessedStatus.DONE.name(),
+                    ProcessedStatus.PROCESSING.name()
+            );
 
             channel.basicAck(tag, false);
-            return;
-
-        } catch (NonRetryableAuthErrorException e) {
-            // 재시도해도 의미 없는 케이스는 즉시 DLQ
-            log.error("[AuthErrorConsumer] NON-RETRYABLE -> DLQ outboxId={}, err={}",
-                    outboxId, e.getMessage(), e);
-
-            channel.basicReject(tag, false); // DLQ
-            return;
-
         } catch (Exception e) {
-            // 그 외는 retry 정책 적용
-            int retry = HeaderUtils.getRetryCount(message.getMessageProperties().getHeaders());
+            OutboxDecision decision = decisionMaker.decide(now, currentRetry, e);
 
-            if (retry >= MAX_RETRY) {
-                log.error("[AuthErrorConsumer] FAIL -> DLQ outboxId={}, retry={}, err={}",
-                        outboxId, retry, e.getMessage(), e);
-                channel.basicReject(tag, false); // DLQ
+            if (decision.isDead()) {
+                // ✅ 여기서 DB 상태도 정리해두는 걸 추천(최소 DONE 처리라도)
+                processedMessageRepo.markDone(
+                        outboxId, OffsetDateTime.now(),
+                        ProcessedStatus.DONE.name(),
+                        ProcessedStatus.PROCESSING.name()
+                );
+
+                log.error("[AuthErrorConsumer] DEAD -> DLQ outboxId={}, nextRetry={}, err={}",
+                        outboxId, decision.nextRetryCount(), decision.lastError(), e);
+
+                channel.basicReject(tag, false);
                 return;
             }
 
-            int nextRetry = retry + 1;
-            log.warn("[AuthErrorConsumer] FAIL -> RETRY outboxId={}, retry={}/{} err={}",
-                    outboxId, nextRetry, MAX_RETRY, e.getMessage());
+            // RETRY
+            log.warn("[AuthErrorConsumer] RETRY outboxId={}, nextRetry={}, at={}, err={}",
+                    outboxId, decision.nextRetryCount(), decision.nextRetryAt(), decision.lastError(), e);
 
-            // lease 즉시 만료시켜서 10초 뒤 retry 메시지가 선점 가능하게
+            // 재발행(헤더 유지 + retry 갱신)
+            republishToRetryExchange(payload, message, decision);
+
+            // lease 만료/해제 (다음 메시지가 선점 가능하게)
             processedMessageRepo.releaseLeaseForRetry(
                     outboxId,
                     now,
                     ProcessedStatus.PROCESSING.name()
             );
 
-            // Retry Exchange로 다시 발행 (헤더 유지 + retry 증가)
-            rabbitTemplate.convertAndSend(
-                    RabbitTopologyConfig.RETRY_EXCHANGE,
-                    RabbitTopologyConfig.RETRY_ROUTING_KEY_10S,
-                    payload,
-                    msg -> {
-                        MessageProperties p = msg.getMessageProperties();
-                        p.setContentType(MessageProperties.CONTENT_TYPE_JSON);
-
-                        // 원래 헤더 복사(가능한 한)
-                        p.getHeaders().putAll(message.getMessageProperties().getHeaders());
-                        p.setHeader(RETRY_HEADER, nextRetry);
-                        return msg;
-                    }
-            );
-
-            // 원본 메시지는 ACK 처리(중복 재전달 방지)
+            // 원본 메시지 ACK
             channel.basicAck(tag, false);
         }
+    }
+
+    private Map<String, Object> buildHeaders(Long outboxId, String eventType, String aggregateType, int retry) {
+        Map<String, Object> headers = new HashMap<>();
+        headers.put("outboxId", outboxId);
+        headers.put("eventType", eventType);
+        headers.put("aggregateType", aggregateType);
+        headers.put(RETRY_HEADER, retry);
+        return headers;
+    }
+
+    private void republishToRetryExchange(String payload, Message original, OutboxDecision decision) {
+        rabbitTemplate.convertAndSend(
+                RabbitTopologyConfig.RETRY_EXCHANGE,
+                // ✅ 네 topology가 delaySeconds 고정이면 그대로,
+                //    나중에 nextRetryAt 기반으로 routing 선택/TTL 헤더로 확장 가능
+                RabbitTopologyConfig.RETRY_ROUTING_KEY_10S,
+                payload,
+                msg -> {
+                    MessageProperties p = msg.getMessageProperties();
+                    p.setContentType(MessageProperties.CONTENT_TYPE_JSON);
+
+                    // 기존 헤더 유지
+                    p.getHeaders().putAll(original.getMessageProperties().getHeaders());
+
+                    // retry 카운트 업데이트 (policy 기반)
+                    p.setHeader(RETRY_HEADER, decision.nextRetryCount());
+
+                    // lastError/nextRetryAt 기록
+                     p.setHeader("x-last-error", decision.lastError());
+                     p.setHeader("x-next-retry-at", decision.nextRetryAt().toString());
+
+                    return msg;
+                }
+        );
     }
 }
