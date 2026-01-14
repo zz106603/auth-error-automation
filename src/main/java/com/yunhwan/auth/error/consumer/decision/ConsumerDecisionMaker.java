@@ -16,17 +16,10 @@ public class ConsumerDecisionMaker {
 
     public OutboxDecision decide(OffsetDateTime now, int currentRetryCount, Throwable e) {
         String lastError = compactError(e);
-
-        // 비재시도 예외는 즉시 DEAD
-        if (e instanceof NonRetryableAuthErrorException) {
-            int nextRetry = retryPolicy.nextRetryCount(currentRetryCount);
-            return OutboxDecision.ofDead(nextRetry, lastError);
-        }
-
         int nextRetry = retryPolicy.nextRetryCount(currentRetryCount);
 
-        // 정책상 더 이상 재시도하지 않으면 DEAD
-        if (retryPolicy.shouldDead(nextRetry)) {
+        // 비재시도 예외이거나 정책상 더 이상 재시도하지 않으면 DEAD
+        if (e instanceof NonRetryableAuthErrorException || retryPolicy.shouldDead(nextRetry)) {
             return OutboxDecision.ofDead(nextRetry, lastError);
         }
 
