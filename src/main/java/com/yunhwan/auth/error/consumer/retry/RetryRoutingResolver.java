@@ -17,17 +17,20 @@ import org.springframework.stereotype.Component;
 @Component
 public class RetryRoutingResolver {
 
+    private static final int FAST_RETRY_MAX = 3;
+    private static final int MEDIUM_RETRY_MAX = 6;
+
     public String resolve(int nextRetryCount) {
         if (nextRetryCount <= 0) {
             // 방어: 0 이하가 들어오면 첫 retry로 취급
             nextRetryCount = 1;
         }
 
-        if (nextRetryCount <= 3) {
+        if (nextRetryCount <= FAST_RETRY_MAX) {
             return RabbitTopologyConfig.RETRY_RK_10S;
         }
 
-        if (nextRetryCount <= 6) {
+        if (nextRetryCount <= MEDIUM_RETRY_MAX) {
             return RabbitTopologyConfig.RETRY_RK_1M;
         }
 
