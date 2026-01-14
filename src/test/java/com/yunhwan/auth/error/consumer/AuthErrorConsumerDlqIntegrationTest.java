@@ -24,7 +24,9 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 @SpringBootTest(properties = {
         "spring.rabbitmq.listener.simple.auto-startup=true",
-        "spring.rabbitmq.listener.direct.auto-startup=true"
+        "spring.rabbitmq.listener.direct.auto-startup=true",
+        "outbox.retry.max-retries=3",
+        "outbox.retry.delay-seconds=10"
 })
 @DisplayName("Consumer DLQ(Dead Letter Queue) 처리 통합 테스트")
 class AuthErrorConsumerDlqIntegrationTest extends AbstractStubIntegrationTest {
@@ -70,9 +72,11 @@ class AuthErrorConsumerDlqIntegrationTest extends AbstractStubIntegrationTest {
             );
         });
 
-        // 최대 재시도 횟수(3회) 도달 여부 확인
-        assertTrue(testAuthErrorHandler.getMaxRetrySeen() >= 3,
-                "최대 재시도 횟수(3회) 이상 실행되었어야 합니다.");
+        assertTrue(testAuthErrorHandler.getCallCount() >= 3,
+                "maxRetries=3이면 (첫 시도 포함) 총 3회 이상 handle 되어야 합니다.");
+
+        assertTrue(testAuthErrorHandler.getMaxRetrySeen() >= 2,
+                "maxRetries=3이면 마지막 재시도 소비에서 retry header는 2까지 관측됩니다.");
     }
 
     private Message createMessage(long outboxId) {
