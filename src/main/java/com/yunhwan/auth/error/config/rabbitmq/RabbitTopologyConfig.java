@@ -16,10 +16,23 @@ public class RabbitTopologyConfig {
     public static final String DLQ = "auth.error.queue.dlq";
     public static final String DLQ_ROUTING_KEY = "auth.error.detected.v1.dlq";
 
-    // RETRY (10s 예시)
+    // RETRY EXCHANGE
     public static final String RETRY_EXCHANGE = "auth.error.retry.exchange";
-    public static final String RETRY_QUEUE_10S = "auth.error.queue.retry.10s";
-    public static final String RETRY_ROUTING_KEY_10S = "auth.error.retry.10s";
+
+    // === Retry routing keys (ladder) ===
+    public static final String RETRY_RK_10S = "auth.error.retry.10s";
+    public static final String RETRY_RK_1M  = "auth.error.retry.1m";
+    public static final String RETRY_RK_10M = "auth.error.retry.10m";
+
+    // === Retry queues ===
+    public static final String RETRY_Q_10S = "auth.error.retry.q.10s";
+    public static final String RETRY_Q_1M  = "auth.error.retry.q.1m";
+    public static final String RETRY_Q_10M = "auth.error.retry.q.10m";
+
+    // TTL(ms)
+    public static final int RETRY_TTL_10S = 10_000;
+    public static final int RETRY_TTL_1M  = 60_000;
+    public static final int RETRY_TTL_10M = 600_000;
 
     @Bean
     public TopicExchange authErrorExchange() {
@@ -49,12 +62,32 @@ public class RabbitTopologyConfig {
         return QueueBuilder.durable(DLQ).build();
     }
 
+    /** 10s retry queue */
     @Bean
     public Queue authErrorRetryQueue10s() {
-        // TTL 지나면 Main Exchange로 돌아오게 설정
-        return QueueBuilder.durable(RETRY_QUEUE_10S)
-                .withArgument("x-message-ttl", 10_000)                 // 10s
-                .withArgument("x-dead-letter-exchange", EXCHANGE)      // 다시 메인으로
+        return QueueBuilder.durable(RETRY_Q_10S)
+                .withArgument("x-message-ttl", RETRY_TTL_10S)
+                .withArgument("x-dead-letter-exchange", EXCHANGE)
+                .withArgument("x-dead-letter-routing-key", ROUTING_KEY)
+                .build();
+    }
+
+    /** 1m retry queue */
+    @Bean
+    public Queue authErrorRetryQueue1m() {
+        return QueueBuilder.durable(RETRY_Q_1M)
+                .withArgument("x-message-ttl", RETRY_TTL_1M)
+                .withArgument("x-dead-letter-exchange", EXCHANGE)
+                .withArgument("x-dead-letter-routing-key", ROUTING_KEY)
+                .build();
+    }
+
+    /** 10m retry queue */
+    @Bean
+    public Queue authErrorRetryQueue10m() {
+        return QueueBuilder.durable(RETRY_Q_10M)
+                .withArgument("x-message-ttl", RETRY_TTL_10M)
+                .withArgument("x-dead-letter-exchange", EXCHANGE)
                 .withArgument("x-dead-letter-routing-key", ROUTING_KEY)
                 .build();
     }
@@ -71,6 +104,16 @@ public class RabbitTopologyConfig {
 
     @Bean
     public Binding authErrorRetry10sBinding(TopicExchange authErrorRetryExchange, Queue authErrorRetryQueue10s) {
-        return BindingBuilder.bind(authErrorRetryQueue10s).to(authErrorRetryExchange).with(RETRY_ROUTING_KEY_10S);
+        return BindingBuilder.bind(authErrorRetryQueue10s).to(authErrorRetryExchange).with(RETRY_RK_10S);
+    }
+
+    @Bean
+    public Binding authErrorRetry1mBinding(TopicExchange authErrorRetryExchange, Queue authErrorRetryQueue1m) {
+        return BindingBuilder.bind(authErrorRetryQueue1m).to(authErrorRetryExchange).with(RETRY_RK_1M);
+    }
+
+    @Bean
+    public Binding authErrorRetry10mBinding(TopicExchange authErrorRetryExchange, Queue authErrorRetryQueue10m) {
+        return BindingBuilder.bind(authErrorRetryQueue10m).to(authErrorRetryExchange).with(RETRY_RK_10M);
     }
 }
