@@ -5,6 +5,7 @@ import com.yunhwan.auth.error.config.rabbitmq.RabbitTopologyConfig;
 import com.yunhwan.auth.error.consumer.decision.ConsumerDecisionMaker;
 import com.yunhwan.auth.error.consumer.handler.AuthErrorHandler;
 import com.yunhwan.auth.error.consumer.persistence.ProcessedMessageRepository;
+import com.yunhwan.auth.error.consumer.retry.RetryRoutingResolver;
 import com.yunhwan.auth.error.consumer.util.HeaderUtils;
 import com.yunhwan.auth.error.domain.consumer.ProcessedStatus;
 import com.yunhwan.auth.error.outbox.support.OutboxDecision;
@@ -34,6 +35,7 @@ public class AuthErrorConsumer {
     private final AuthErrorHandler handler;
     private final ProcessedMessageRepository processedMessageRepo;
     private final ConsumerDecisionMaker decisionMaker;
+    private final RetryRoutingResolver retryRoutingResolver;
 
     @RabbitListener(queues = RabbitTopologyConfig.QUEUE)
     public void onMessage(
@@ -129,11 +131,11 @@ public class AuthErrorConsumer {
     }
 
     private void republishToRetryExchange(String payload, Message original, OutboxDecision decision) {
+        String routingKey = retryRoutingResolver.resolve(decision.nextRetryCount());
+
         rabbitTemplate.convertAndSend(
                 RabbitTopologyConfig.RETRY_EXCHANGE,
-                // ✅ 네 topology가 delaySeconds 고정이면 그대로,
-                //    나중에 nextRetryAt 기반으로 routing 선택/TTL 헤더로 확장 가능
-                RabbitTopologyConfig.RETRY_ROUTING_KEY_10S,
+                routingKey,
                 payload,
                 msg -> {
                     MessageProperties p = msg.getMessageProperties();
@@ -146,8 +148,12 @@ public class AuthErrorConsumer {
                     p.setHeader(RETRY_HEADER, decision.nextRetryCount());
 
                     // lastError/nextRetryAt 기록
-                     p.setHeader("x-last-error", decision.lastError());
-                     p.setHeader("x-next-retry-at", decision.nextRetryAt().toString());
+                    if (decision.lastError() != null) {
+                        p.setHeader("x-last-error", decision.lastError());
+                    }
+                    if (decision.nextRetryAt() != null) {
+                        p.setHeader("x-next-retry-at", decision.nextRetryAt().toString());
+                    }
 
                     return msg;
                 }
