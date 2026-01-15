@@ -7,13 +7,12 @@ import org.springframework.stereotype.Component;
 @Component
 @Profile("!test")
 public class NoopOutboxScopeResolver implements OutboxScopeResolver {
-    private static final ThreadLocal<String> PREFIX = new ThreadLocal<>();
+    
+    @Override
+    public void set(String prefix) { /* No-op */ }
 
     @Override
-    public void set(String prefix) { PREFIX.set(prefix); }
-
-    @Override
-    public void clear() { PREFIX.remove(); }
+    public void clear() { /* No-op */ }
 
     @Override
     public String scopePrefixOrNull() {
