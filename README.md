@@ -32,6 +32,57 @@
 
 ---
 
+## Package Structure
+
+헥사고날 아키텍처(Hexagonal Architecture)를 기반으로 **도메인(Domain)**, **유스케이스(UseCase)**, **인프라(Infra)** 계층을 명확히 분리했습니다.
+
+```text
+com.yunhwan.auth.error
+├─ app                  # [Web Adapter] 애플리케이션 진입점
+│  ├─ api
+│  │  └─ auth
+│  └─ autherror
+├─ common               # [Shared] 공통 예외 및 유틸리티
+│  └─ exception
+├─ domain               # [Core Domain] 핵심 비즈니스 로직 (외부 의존성 없음)
+│  ├─ autherror
+│  ├─ consumer
+│  └─ outbox
+│     ├─ decision
+│     ├─ descriptor
+│     └─ policy
+├─ usecase              # [Input Port] 애플리케이션 유스케이스
+│  ├─ autherror
+│  │  ├─ dto
+│  │  └─ port
+│  ├─ consumer
+│  │  ├─ handler
+│  │  ├─ observer
+│  │  └─ port
+│  └─ outbox
+│  │  ├─ config
+│  │  ├─ dto
+│  │  └─ port
+└─ infra                # [Output Port Adapter] 외부 시스템 연동 구현체
+   ├─ autherror
+   ├─ messaging         # RabbitMQ 메시징
+   │  ├─ consumer
+   │  └─ rabbit
+   ├─ outbox            # Outbox 인프라 지원
+   │  ├─ descriptor
+   │  ├─ policy
+   │  ├─ serializer
+   │  └─ support
+   ├─ persistence       # 데이터베이스 영속성 (JPA)
+   │  ├─ adapter
+   │  ├─ config
+   │  └─ jpa
+   ├─ scheduling
+   └─ support
+```
+
+---
+
 ## Message Lifecycle
 
 | Status | Description |
