@@ -49,13 +49,14 @@ class OutboxRetryAndDeadIntegrationTest extends AbstractStubIntegrationTest {
     @DisplayName("발행 실패 후 재시도 시간이 미래인 경우 즉시 재폴링되지 않고 시간이 지나야 재처리된다")
     void 발행_실패_후_재시도_시간이_미래인_경우_즉시_재폴링되지_않고_시간이_지나야_재처리된다() {
         // given
-        OutboxMessage m = fixtures.createAuthErrorMessage("REQ-RETRY" + UUID.randomUUID(), "{\"val\":\"fail-once\"}");
+        String scope = "T-" + UUID.randomUUID() + "-";
+        OutboxMessage m = fixtures.createAuthErrorMessage(scope, "REQ-RETRY" + UUID.randomUUID(), "{\"val\":\"fail-once\"}");
 
         // 1) 첫 publish는 실패하게 설정
         testPublisher.failNext(true);
 
         // when: 1차 poll -> 처리(실패) -> PENDING + next_retry_at(미래)
-        List<OutboxMessage> claimed1 = poller.pollOnce();
+        List<OutboxMessage> claimed1 = poller.pollOnce(scope);
         assertThat(claimed1).extracting(OutboxMessage::getId).containsExactly(m.getId());
 
         processor.process(claimed1);
@@ -68,7 +69,7 @@ class OutboxRetryAndDeadIntegrationTest extends AbstractStubIntegrationTest {
         assertThat(afterFail.getNextRetryAt()).isAfter(OffsetDateTime.now(clock));
 
         // when: 즉시 다시 poll -> next_retry_at 때문에 claim 0건이어야 함
-        List<OutboxMessage> claimed2 = poller.pollOnce();
+        List<OutboxMessage> claimed2 = poller.pollOnce(scope);
         assertThat(claimed2).isEmpty();
 
         // when: 시간을 "지났다고 가정"하기 위해 next_retry_at을 과거로 강제
@@ -78,7 +79,7 @@ class OutboxRetryAndDeadIntegrationTest extends AbstractStubIntegrationTest {
         testPublisher.failNext(false);
 
         // then: 다시 poll하면 claim 된다
-        List<OutboxMessage> claimed3 = poller.pollOnce();
+        List<OutboxMessage> claimed3 = poller.pollOnce(scope);
         assertThat(claimed3).extracting(OutboxMessage::getId).containsExactly(m.getId());
 
         processor.process(claimed3);
@@ -97,7 +98,8 @@ class OutboxRetryAndDeadIntegrationTest extends AbstractStubIntegrationTest {
     @DisplayName("최대 재시도 횟수에 도달하면 DEAD 상태로 전환된다")
     void 최대_재시도_횟수에_도달하면_DEAD_상태로_전환된다() {
         // given
-        OutboxMessage m = fixtures.createAuthErrorMessage("REQ-DEAD" + UUID.randomUUID(), "{\"val\":\"always-fail\"}");
+        String scope = "T-" + UUID.randomUUID() + "-";
+        OutboxMessage m = fixtures.createAuthErrorMessage(scope, "REQ-DEAD" + UUID.randomUUID(), "{\"val\":\"always-fail\"}");
 
         int maxRetries = outboxProperties.getRetry().getMaxRetries();
         int currentRetryCount = maxRetries - 1;
@@ -113,7 +115,7 @@ class OutboxRetryAndDeadIntegrationTest extends AbstractStubIntegrationTest {
         testPublisher.failNext(true);
 
         // when
-        List<OutboxMessage> claimed = poller.pollOnce();
+        List<OutboxMessage> claimed = poller.pollOnce(scope);
         assertThat(claimed).extracting(OutboxMessage::getId).containsExactly(m.getId());
 
         processor.process(claimed);

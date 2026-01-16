@@ -2,7 +2,6 @@ package com.yunhwan.auth.error.testsupport.fixtures;
 
 import com.yunhwan.auth.error.domain.outbox.OutboxMessage;
 import com.yunhwan.auth.error.usecase.outbox.port.OutboxMessageStore;
-import com.yunhwan.auth.error.usecase.outbox.port.OutboxScopeResolver;
 import org.springframework.context.annotation.Profile;
 import org.springframework.stereotype.Component;
 
@@ -15,16 +14,14 @@ public class OutboxFixtures {
 
     private final OutboxMessageStore outboxMessageStore;
     private final Clock clock;
-    private final OutboxScopeResolver outboxScopeResolver;
 
-    public OutboxFixtures(OutboxMessageStore outboxMessageStore, Clock clock, OutboxScopeResolver outboxScopeResolver) {
+    public OutboxFixtures(OutboxMessageStore outboxMessageStore, Clock clock) {
         this.outboxMessageStore = outboxMessageStore;
         this.clock = clock;
-        this.outboxScopeResolver = outboxScopeResolver;
     }
 
-    public OutboxMessage createAuthErrorMessage(String rawReqId, String payload) {
-        String scopedReqId = outboxScopeResolver.scopePrefixOrNull() + rawReqId;
+    public OutboxMessage createAuthErrorMessage(String scopePrefixOrNull, String rawReqId, String payload) {
+        String scopedReqId = (scopePrefixOrNull == null ? "" : scopePrefixOrNull) + rawReqId;
 
         return outboxMessageStore.upsertReturning(
                 "AUTH_ERROR",

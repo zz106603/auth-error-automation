@@ -45,10 +45,11 @@ class OutboxPollerIntegrationTest extends AbstractStubIntegrationTest {
     @DisplayName("폴링 시 대기중(PENDING)인 메시지를 점유하고 처리중(PROCESSING) 상태로 변경한다")
     void 폴링_시_대기중인_메시지를_점유하고_처리중_상태로_변경한다() {
         // given
-        OutboxMessage inserted = fixtures.createAuthErrorMessage("REQ-1" + UUID.randomUUID(), "{\"reason\":\"token expired\"}");
+        String scope = "T-" + UUID.randomUUID() + "-";
+        OutboxMessage inserted = fixtures.createAuthErrorMessage(scope, "REQ-1" + UUID.randomUUID(), "{\"reason\":\"token expired\"}");
 
         // when
-        List<OutboxMessage> claimed = outboxPoller.pollOnce();
+        List<OutboxMessage> claimed = outboxPoller.pollOnce(scope);
 
         // then
         assertThat(claimed).hasSize(1);
@@ -75,15 +76,16 @@ class OutboxPollerIntegrationTest extends AbstractStubIntegrationTest {
     @DisplayName("재시도 시간이 미래인 메시지는 폴링하지 않는다")
     void 재시도_시간이_미래인_메시지는_폴링하지_않는다() {
         // given: 2건 넣고, 하나는 미래로 업데이트
-        OutboxMessage m1 = fixtures.createAuthErrorMessage("REQ-1" + UUID.randomUUID(), "{\"a\":1}");
-        OutboxMessage m2 = fixtures.createAuthErrorMessage("REQ-2" + UUID.randomUUID(), "{\"a\":2}");
+        String scope = "T-" + UUID.randomUUID() + "-";
+        OutboxMessage m1 = fixtures.createAuthErrorMessage(scope, "REQ-1" + UUID.randomUUID(), "{\"a\":1}");
+        OutboxMessage m2 = fixtures.createAuthErrorMessage(scope, "REQ-2" + UUID.randomUUID(), "{\"a\":2}");
 
         // REQ-2는 next_retry_at을 미래로 밀어두기 (10분 뒤)
         OffsetDateTime future = OffsetDateTime.now(ZoneOffset.UTC).plusMinutes(10);
         tx.executeWithoutResult(status -> outboxMessageStore.setNextRetryAt(m2.getId(), future, OffsetDateTime.now(clock)));
 
         // when
-        List<OutboxMessage> claimed = outboxPoller.pollOnce();
+        List<OutboxMessage> claimed = outboxPoller.pollOnce(scope);
 
         // then: REQ-1만 잡혀야 함
         assertThat(claimed).hasSize(1);
@@ -105,9 +107,10 @@ class OutboxPollerIntegrationTest extends AbstractStubIntegrationTest {
     @DisplayName("동시에 여러 폴러가 실행되어도 동일한 메시지를 중복으로 점유하지 않는다")
     void 동시에_여러_폴러가_실행되어도_동일한_메시지를_중복으로_점유하지_않는다() throws Exception {
         // given: PENDING 메시지 20건 생성
+        String scope = "T-" + UUID.randomUUID() + "-";
         int total = 20;
         for (int i = 1; i <= total; i++) {
-            fixtures.createAuthErrorMessage("REQ-" + i + UUID.randomUUID(), "{\"i\":" + i + "}");
+            fixtures.createAuthErrorMessage(scope, "REQ-" + i + UUID.randomUUID(), "{\"i\":" + i + "}");
         }
 
         // when: pollOnce를 동시에 2개의 스레드에서 실행
@@ -118,7 +121,7 @@ class OutboxPollerIntegrationTest extends AbstractStubIntegrationTest {
         Callable<List<Long>> task = () -> {
             ready.countDown(); // 준비 완료 신호
             start.await(3, TimeUnit.SECONDS); // 시작 신호 대기
-            return outboxPoller.pollOnce().stream().map(OutboxMessage::getId).toList();
+            return outboxPoller.pollOnce(scope).stream().map(OutboxMessage::getId).toList();
         };
 
         Future<List<Long>> f1 = es.submit(task);
@@ -162,14 +165,15 @@ class OutboxPollerIntegrationTest extends AbstractStubIntegrationTest {
     @DisplayName("이미 처리중(PROCESSING)인 메시지는 다시 폴링하지 않는다")
     void 이미_처리중인_메시지는_다시_폴링하지_않는다() {
         // given
-        OutboxMessage inserted = fixtures.createAuthErrorMessage("REQ-1" + UUID.randomUUID(), "{\"a\":1}");
+        String scope = "T-" + UUID.randomUUID() + "-";
+        OutboxMessage inserted = fixtures.createAuthErrorMessage(scope, "REQ-1" + UUID.randomUUID(), "{\"a\":1}");
 
         // first claim: 첫 번째 폴링으로 상태를 PROCESSING으로 변경
-        List<OutboxMessage> first = outboxPoller.pollOnce();
+        List<OutboxMessage> first = outboxPoller.pollOnce(scope);
         assertThat(first).hasSize(1);
 
         // when: second claim (다시 폴링 시도)
-        List<OutboxMessage> second = outboxPoller.pollOnce();
+        List<OutboxMessage> second = outboxPoller.pollOnce(scope);
 
         // then: 이미 처리 중이므로 가져오지 않아야 함
         assertThat(second).isEmpty();

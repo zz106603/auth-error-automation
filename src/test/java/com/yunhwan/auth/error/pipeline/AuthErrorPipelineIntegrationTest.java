@@ -41,7 +41,7 @@ class AuthErrorPipelineIntegrationTest extends AbstractIntegrationTest {
         var result = authErrorWriter.record(authError);
 
         // when: Outbox 메시지 폴링 및 처리 (이벤트 발행 + Outbox 상태 업데이트)
-        List<OutboxMessage> claimed = outboxPoller.pollOnce();
+        List<OutboxMessage> claimed = outboxPoller.pollOnce(null);
         outboxProcessor.process(claimed);
 
         // then: 컨슈머가 메시지를 소비하고, 최종적으로 AuthError 상태가 PROCESSED로 변경되었는지 검증

@@ -27,7 +27,7 @@ public class OutboxReaperScheduler implements SchedulingConfigurer {
     }
 
     void tick() {
-        int reaped = reaper.reapOnce();
+        int reaped = reaper.reapOnce(null);
         if (reaped > 0) {
             log.warn("[outbox-reaper] reaped {} stale PROCESSING messages", reaped);
         }
