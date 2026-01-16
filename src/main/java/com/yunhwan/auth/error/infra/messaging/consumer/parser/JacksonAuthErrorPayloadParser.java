@@ -1,5 +1,6 @@
 package com.yunhwan.auth.error.infra.messaging.consumer.parser;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.yunhwan.auth.error.common.exception.NonRetryableAuthErrorException;
 import com.yunhwan.auth.error.usecase.autherror.dto.AuthErrorRecordedPayload;
@@ -24,7 +25,7 @@ public class JacksonAuthErrorPayloadParser implements AuthErrorPayloadParser {
                 );
             }
             return payload;
-        } catch (Exception e) {
+        } catch (JsonProcessingException e) {
             throw new NonRetryableAuthErrorException(
                     "invalid payload json. outboxId=" + outboxId, e
             );
