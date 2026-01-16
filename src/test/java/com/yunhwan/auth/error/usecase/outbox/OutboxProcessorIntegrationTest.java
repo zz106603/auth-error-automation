@@ -43,7 +43,7 @@ class OutboxProcessorIntegrationTest extends AbstractStubIntegrationTest {
     @DisplayName("메시지 발행 성공 시 상태를 PUBLISHED로 변경한다")
     void 메시지_발행_성공_시_상태를_PUBLISHED로_변경한다() {
         // given: PENDING 메시지 생성
-        String scope = "T-" + UUID.randomUUID() + "-";
+        String scope = newTestScope();
         OutboxMessage m = fixtures.createAuthErrorMessage(scope, "REQ-1" + UUID.randomUUID(), "{\"val\":\"ok\"}");
 
         // 발행 성공 설정
@@ -69,7 +69,7 @@ class OutboxProcessorIntegrationTest extends AbstractStubIntegrationTest {
     @DisplayName("메시지 발행 실패 시 재시도를 위해 상태를 PENDING으로 변경하고 재시도 정보를 업데이트한다")
     void 메시지_발행_실패_시_재시도를_위해_상태를_PENDING으로_변경하고_재시도_정보를_업데이트한다() {
         // given
-        String scope = "T-" + UUID.randomUUID() + "-";
+        String scope = newTestScope();
         OutboxMessage m = fixtures.createAuthErrorMessage(scope, "REQ-FAIL" + UUID.randomUUID(), "{\"val\":\"fail\"}");
 
         // 발행 실패 설정

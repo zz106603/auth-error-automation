@@ -7,6 +7,7 @@ import org.springframework.stereotype.Component;
 
 import java.time.Clock;
 import java.time.OffsetDateTime;
+import java.util.Optional;
 
 @Profile("test")
 @Component
@@ -21,7 +22,7 @@ public class OutboxFixtures {
     }
 
     public OutboxMessage createAuthErrorMessage(String scopePrefixOrNull, String rawReqId, String payload) {
-        String scopedReqId = (scopePrefixOrNull == null ? "" : scopePrefixOrNull) + rawReqId;
+        String scopedReqId = Optional.ofNullable(scopePrefixOrNull).orElse("") + rawReqId;
 
         return outboxMessageStore.upsertReturning(
                 "AUTH_ERROR",

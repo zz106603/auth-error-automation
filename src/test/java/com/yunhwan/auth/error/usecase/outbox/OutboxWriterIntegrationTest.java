@@ -67,7 +67,7 @@ class OutboxWriterIntegrationTest extends AbstractStubIntegrationTest {
     }
 
     private OutboxEnqueueCommand createCommand(String reqId, String payload) {
-        String scopedReqId = "T-" + UUID.randomUUID() + "-" + reqId;
+        String scopedReqId = newTestScope() + "-" + reqId;
         return new OutboxEnqueueCommand(
                 "AUTH_ERROR",
                 scopedReqId,
