@@ -1,10 +1,10 @@
 package com.yunhwan.auth.error.usecase.outbox;
 
 import com.yunhwan.auth.error.domain.outbox.OutboxMessage;
-import com.yunhwan.auth.error.domain.outbox.OutboxPublisher;
 import com.yunhwan.auth.error.domain.outbox.decision.OutboxDecision;
-import com.yunhwan.auth.error.domain.outbox.policy.RetryPolicy;
+import com.yunhwan.auth.error.usecase.consumer.policy.RetryPolicy;
 import com.yunhwan.auth.error.usecase.outbox.port.OutboxMessageStore;
+import com.yunhwan.auth.error.usecase.outbox.port.OutboxPublisher;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;

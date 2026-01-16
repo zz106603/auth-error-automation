@@ -2,7 +2,7 @@ package com.yunhwan.auth.error.usecase.consumer;
 
 import com.yunhwan.auth.error.common.exception.NonRetryableAuthErrorException;
 import com.yunhwan.auth.error.domain.outbox.decision.OutboxDecision;
-import com.yunhwan.auth.error.domain.outbox.policy.RetryPolicy;
+import com.yunhwan.auth.error.usecase.consumer.policy.RetryPolicy;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
