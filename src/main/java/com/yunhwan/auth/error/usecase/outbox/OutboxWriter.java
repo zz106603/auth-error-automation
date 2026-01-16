@@ -37,24 +37,4 @@ public class OutboxWriter {
         );
     }
 
-    /**
-     * "새로 적재했는지 여부"만 필요한 경우 사용.
-     */
-    @Transactional
-    public boolean tryEnqueue(OutboxEnqueueCommand cmd) {
-        OutboxMessage message = OutboxMessage.pending(
-                cmd.aggregateType(),
-                cmd.aggregateId(),
-                cmd.eventType(),
-                cmd.payloadJson(),
-                cmd.idempotencyKey()
-        );
-
-        try {
-            outboxMessageStore.save(message);
-            return true;
-        } catch (DataIntegrityViolationException e) {
-            return false;
-        }
-    }
 }
