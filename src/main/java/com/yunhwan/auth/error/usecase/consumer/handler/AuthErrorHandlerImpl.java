@@ -6,6 +6,7 @@ import com.yunhwan.auth.error.common.exception.RetryableAuthErrorException;
 import com.yunhwan.auth.error.domain.autherror.AuthError;
 import com.yunhwan.auth.error.usecase.autherror.dto.AuthErrorRecordedPayload;
 import com.yunhwan.auth.error.usecase.autherror.port.AuthErrorStore;
+import com.yunhwan.auth.error.usecase.consumer.port.AuthErrorPayloadParser;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
@@ -19,14 +20,14 @@ import java.util.Map;
 @RequiredArgsConstructor
 public class AuthErrorHandlerImpl implements AuthErrorHandler {
 
-    private final ObjectMapper objectMapper;
     private final AuthErrorStore authErrorStore;
+    private final AuthErrorPayloadParser payloadParser;
 
     @Transactional
     public void handle(String payloadJson, Map<String, Object> headers) {
         Long outboxId = headerLong(headers, "outboxId");
 
-        AuthErrorRecordedPayload payload = parse(payloadJson, outboxId);
+        AuthErrorRecordedPayload payload = payloadParser.parse(payloadJson, outboxId);
 
         AuthError authError = authErrorStore.findById(payload.authErrorId())
                 .orElseThrow(() -> new NonRetryableAuthErrorException(
@@ -64,18 +65,6 @@ public class AuthErrorHandlerImpl implements AuthErrorHandler {
             // 일시 장애/외부 연동 실패 등: 재시도 대상
             authError.markRetry(nextRetryAt(authError.getRetryCount()));
             throw new RetryableAuthErrorException("retryable failure. outboxId=" + outboxId, e);
-        }
-    }
-
-    private AuthErrorRecordedPayload parse(String payloadJson, Long outboxId) {
-        try {
-            AuthErrorRecordedPayload payload = objectMapper.readValue(payloadJson, AuthErrorRecordedPayload.class);
-            if (payload.authErrorId() == null) {
-                throw new NonRetryableAuthErrorException("missing authErrorId in payload. outboxId=" + outboxId);
-            }
-            return payload;
-        } catch (Exception e) {
-            throw new NonRetryableAuthErrorException("invalid payload json. outboxId=" + outboxId, e);
         }
     }
 
