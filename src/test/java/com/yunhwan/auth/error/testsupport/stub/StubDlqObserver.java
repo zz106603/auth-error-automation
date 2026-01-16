@@ -1,6 +1,6 @@
 package com.yunhwan.auth.error.testsupport.stub;
 
-import com.yunhwan.auth.error.usecase.consumer.observer.DlqObserver;
+import com.yunhwan.auth.error.usecase.consumer.port.DlqHandler;
 import org.springframework.context.annotation.Primary;
 import org.springframework.context.annotation.Profile;
 import org.springframework.stereotype.Component;
@@ -11,7 +11,7 @@ import java.util.concurrent.atomic.AtomicReference;
 @Profile("stub")
 @Component
 @Primary
-public class StubDlqObserver implements DlqObserver {
+public class StubDlqObserver implements DlqHandler {
 
     private final AtomicLong count = new AtomicLong(0);
     private final AtomicReference<Long> lastOutboxId = new AtomicReference<>(null);
