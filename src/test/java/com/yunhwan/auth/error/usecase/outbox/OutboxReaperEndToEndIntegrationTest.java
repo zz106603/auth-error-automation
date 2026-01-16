@@ -49,10 +49,11 @@ class OutboxReaperEndToEndIntegrationTest extends AbstractStubIntegrationTest {
     @DisplayName("처리가 중단된 메시지를 Reaper가 복구하고 다시 처리하여 완료(PUBLISHED)시킨다")
     void 처리가_중단된_메시지를_Reaper가_복구하고_다시_처리하여_완료시킨다() {
         // given: 메시지 생성
-        OutboxMessage m = fixtures.createAuthErrorMessage("REQ-E2E" + UUID.randomUUID(), "{\"val\":\"e2e\"}");
+        String scope = "T-" + UUID.randomUUID() + "-";
+        OutboxMessage m = fixtures.createAuthErrorMessage(scope, "REQ-E2E" + UUID.randomUUID(), "{\"val\":\"e2e\"}");
 
         // 1) poller가 claim해서 PROCESSING으로 만든다
-        List<OutboxMessage> claimed1 = poller.pollOnce();
+        List<OutboxMessage> claimed1 = poller.pollOnce(scope);
         assertThat(claimed1).extracting(OutboxMessage::getId).containsExactly(m.getId());
 
         OutboxMessage processing = outboxMessageStore.findById(m.getId()).orElseThrow();
@@ -66,7 +67,7 @@ class OutboxReaperEndToEndIntegrationTest extends AbstractStubIntegrationTest {
         );
 
         // 3) reaper가 stale PROCESSING을 PENDING으로 복구
-        int reaped = reaper.reapOnce();
+        int reaped = reaper.reapOnce(scope);
         assertThat(reaped).isEqualTo(1);
 
         OutboxMessage afterReap = outboxMessageStore.findById(m.getId()).orElseThrow();
@@ -82,7 +83,7 @@ class OutboxReaperEndToEndIntegrationTest extends AbstractStubIntegrationTest {
         testPublisher.failNext(false);
 
         // when: 다시 poll 해서 claim -> processor 처리
-        List<OutboxMessage> claimed2 = poller.pollOnce();
+        List<OutboxMessage> claimed2 = poller.pollOnce(scope);
         assertThat(claimed2).extracting(OutboxMessage::getId).containsExactly(m.getId());
 
         processor.process(claimed2);

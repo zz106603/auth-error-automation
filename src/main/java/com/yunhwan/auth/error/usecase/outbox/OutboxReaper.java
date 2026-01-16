@@ -2,10 +2,9 @@ package com.yunhwan.auth.error.usecase.outbox;
 
 import com.yunhwan.auth.error.domain.outbox.OutboxMessage;
 import com.yunhwan.auth.error.domain.outbox.decision.OutboxDecision;
-import com.yunhwan.auth.error.domain.outbox.policy.RetryPolicy;
+import com.yunhwan.auth.error.usecase.consumer.policy.RetryPolicy;
 import com.yunhwan.auth.error.usecase.outbox.config.OutboxProperties;
 import com.yunhwan.auth.error.usecase.outbox.port.OutboxMessageStore;
-import com.yunhwan.auth.error.usecase.outbox.port.OutboxScopeResolver;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -30,10 +29,9 @@ public class OutboxReaper {
     private final OutboxProperties outboxProperties;
     private final RetryPolicy retryPolicy;
     private final Clock clock;
-    private final OutboxScopeResolver outboxScopeResolver;
 
     @Transactional
-    public int reapOnce() {
+    public int reapOnce(String scopePrefixOrNull) {
         OffsetDateTime now = OffsetDateTime.now(clock);
 
         int staleAfterSeconds = outboxProperties.getReaper().getStaleAfterSeconds();
@@ -41,7 +39,7 @@ public class OutboxReaper {
 
         OffsetDateTime staleBefore = now.minusSeconds(staleAfterSeconds);
 
-        List<OutboxMessage> stale = outboxMessageStore.pickStaleProcessing(staleBefore, batchSize, outboxScopeResolver.scopePrefixOrNull());
+        List<OutboxMessage> stale = outboxMessageStore.pickStaleProcessing(staleBefore, batchSize, scopePrefixOrNull);
         if (stale.isEmpty()) return 0;
 
         int affected = 0;

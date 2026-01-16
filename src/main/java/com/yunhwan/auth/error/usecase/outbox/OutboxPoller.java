@@ -17,10 +17,10 @@ public class OutboxPoller {
     private final OutboxProperties props;
 
     /** 한 번 돌 때: PENDING -> PROCESSING으로 "claim"만 한다 */
-    public List<OutboxMessage> pollOnce() {
+    public List<OutboxMessage> pollOnce(String scopePrefixOrNull) {
         String owner = ownerResolver.resolve();
         int batchSize = props.getPoller().getBatchSize();
 
-        return outboxClaimer.claimBatch(batchSize, owner);
+        return outboxClaimer.claimBatch(batchSize, owner, scopePrefixOrNull);
     }
 }

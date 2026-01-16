@@ -34,7 +34,7 @@ public class OutboxPollerScheduler implements SchedulingConfigurer {
     }
 
     void tick() {
-        List<OutboxMessage> claimed = outboxPoller.pollOnce();
+        List<OutboxMessage> claimed = outboxPoller.pollOnce(null);
 
         if (!claimed.isEmpty()) {
             log.info("[outbox-poller] claimed {} messages. ids={}",
