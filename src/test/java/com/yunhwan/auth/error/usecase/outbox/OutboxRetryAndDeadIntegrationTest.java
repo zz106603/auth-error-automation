@@ -49,7 +49,7 @@ class OutboxRetryAndDeadIntegrationTest extends AbstractStubIntegrationTest {
     @DisplayName("발행 실패 후 재시도 시간이 미래인 경우 즉시 재폴링되지 않고 시간이 지나야 재처리된다")
     void 발행_실패_후_재시도_시간이_미래인_경우_즉시_재폴링되지_않고_시간이_지나야_재처리된다() {
         // given
-        String scope = "T-" + UUID.randomUUID() + "-";
+        String scope = newTestScope();
         OutboxMessage m = fixtures.createAuthErrorMessage(scope, "REQ-RETRY" + UUID.randomUUID(), "{\"val\":\"fail-once\"}");
 
         // 1) 첫 publish는 실패하게 설정
@@ -98,7 +98,7 @@ class OutboxRetryAndDeadIntegrationTest extends AbstractStubIntegrationTest {
     @DisplayName("최대 재시도 횟수에 도달하면 DEAD 상태로 전환된다")
     void 최대_재시도_횟수에_도달하면_DEAD_상태로_전환된다() {
         // given
-        String scope = "T-" + UUID.randomUUID() + "-";
+        String scope = newTestScope();
         OutboxMessage m = fixtures.createAuthErrorMessage(scope, "REQ-DEAD" + UUID.randomUUID(), "{\"val\":\"always-fail\"}");
 
         int maxRetries = outboxProperties.getRetry().getMaxRetries();

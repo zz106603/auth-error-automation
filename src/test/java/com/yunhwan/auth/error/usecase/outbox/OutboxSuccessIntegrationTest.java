@@ -40,7 +40,7 @@ class OutboxSuccessIntegrationTest extends AbstractStubIntegrationTest {
     @DisplayName("메시지가 정상적으로 생성, 폴링, 발행되어 PUBLISHED 상태가 된다")
     void 메시지가_정상적으로_생성_폴링_발행되어_PUBLISHED_상태가_된다() {
         // given: DB에 outbox row 생성
-        String scope = "T-" + UUID.randomUUID() + "-";
+        String scope = newTestScope();
         OutboxMessage saved = fixtures.createAuthErrorMessage(scope, "REQ-1" + UUID.randomUUID(), "{ \"error\": \"AUTH_FAILED\" }");
 
         // when: 폴링 및 처리

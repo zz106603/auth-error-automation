@@ -6,9 +6,16 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.context.annotation.Import;
 import org.springframework.test.context.ActiveProfiles;
 
+import java.util.UUID;
+
 @ActiveProfiles({"test", "stub"})
 @SpringBootTest
 @Import(TestcontainersConfig.class)
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
 public abstract class AbstractStubIntegrationTest {
+
+    protected String newTestScope() {
+        return "T-" + UUID.randomUUID() + "-";
+    }
+
 }

@@ -43,7 +43,7 @@ class OutboxReaperIntegrationTest extends AbstractStubIntegrationTest {
     @DisplayName("오랫동안 처리중인(Stale) 메시지는 PENDING 상태로 복구되고 재시도 정보가 갱신된다")
     void 오랫동안_처리중인_메시지는_PENDING_상태로_복구되고_재시도_정보가_갱신된다() {
         // given: 메시지 생성
-        String scope = "T-" + UUID.randomUUID() + "-";
+        String scope = newTestScope();
         OutboxMessage m = fixtures.createAuthErrorMessage(scope, "REQ-STUCK" + UUID.randomUUID(), "{\"val\":\"x\"}");
 
         // poller가 claim해서 PROCESSING 상태로 만든다

@@ -49,7 +49,7 @@ class OutboxReaperEndToEndIntegrationTest extends AbstractStubIntegrationTest {
     @DisplayName("처리가 중단된 메시지를 Reaper가 복구하고 다시 처리하여 완료(PUBLISHED)시킨다")
     void 처리가_중단된_메시지를_Reaper가_복구하고_다시_처리하여_완료시킨다() {
         // given: 메시지 생성
-        String scope = "T-" + UUID.randomUUID() + "-";
+        String scope = newTestScope();
         OutboxMessage m = fixtures.createAuthErrorMessage(scope, "REQ-E2E" + UUID.randomUUID(), "{\"val\":\"e2e\"}");
 
         // 1) poller가 claim해서 PROCESSING으로 만든다
