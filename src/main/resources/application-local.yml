@@ -51,4 +51,8 @@ management:
   endpoint:
     health:
       show-details: always
+
+auth-error:
+  source-service: ${spring.application.name}
+  environment: local
       

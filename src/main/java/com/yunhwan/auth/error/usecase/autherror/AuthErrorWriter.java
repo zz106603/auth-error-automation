@@ -5,6 +5,7 @@ import com.yunhwan.auth.error.domain.outbox.OutboxMessage;
 import com.yunhwan.auth.error.domain.outbox.descriptor.OutboxEventDescriptor;
 import com.yunhwan.auth.error.domain.outbox.policy.IdempotencyKeyResolver;
 import com.yunhwan.auth.error.domain.outbox.policy.PayloadSerializer;
+import com.yunhwan.auth.error.usecase.autherror.config.AuthErrorProperties;
 import com.yunhwan.auth.error.usecase.autherror.dto.AuthErrorRecordedPayload;
 import com.yunhwan.auth.error.usecase.autherror.dto.AuthErrorWriteResult;
 import com.yunhwan.auth.error.usecase.autherror.port.AuthErrorStore;
@@ -15,6 +16,9 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.Clock;
+import java.time.OffsetDateTime;
+
 @Slf4j
 @Service
 @RequiredArgsConstructor
@@ -22,6 +26,8 @@ public class AuthErrorWriter {
 
     private final AuthErrorStore authErrorStore;
     private final OutboxWriter outboxWriter;
+    private final Clock clock;
+    private final AuthErrorProperties authErrorProperties;
 
     private final PayloadSerializer outboxPayloadSerializer;
     private final IdempotencyKeyResolver<AuthError> idempotencyKeyResolver;
@@ -35,7 +41,17 @@ public class AuthErrorWriter {
     @Transactional
     public AuthErrorWriteResult record(AuthError authError) {
         // 1) auth_error 저장
-        AuthError saved = authErrorStore.save(authError);
+
+        OffsetDateTime now = OffsetDateTime.now(clock);
+        AuthError toSave = AuthError.record(
+                authError.getRequestId(),
+                authError.getOccurredAt(),
+                now,
+                authErrorProperties.getSourceService(),
+                authErrorProperties.getEnvironment()
+        );
+
+        AuthError saved = authErrorStore.save(toSave);
 
         // 2) outbox payload 최소 계약 (DLQ/추적에 유리)
         String payloadJson = outboxPayloadSerializer.serialize(new AuthErrorRecordedPayload(

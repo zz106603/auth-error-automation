@@ -140,6 +140,34 @@ public class AuthError {
 
     /* ===== 도메인 행위 ===== */
 
+    public static AuthError record(
+            String requestId,
+            OffsetDateTime occurredAt,
+            OffsetDateTime receivedAt,
+            String sourceService,
+            String environment
+    ) {
+        return AuthError.builder()
+                /* ===== 식별/추적 ===== */
+                .requestId(requestId)
+
+                /* ===== 발생/출처 ===== */
+                .occurredAt(occurredAt)
+                .receivedAt(receivedAt)
+                .sourceService(sourceService)
+                .environment(environment)
+
+                /* ===== 에러 분류 기본값 ===== */
+                .errorDomain("AUTH")
+                .severity("ERROR")
+                .status(AuthErrorStatus.NEW)
+                .retryCount(0)
+
+                /* ===== 기타 기본값 ===== */
+                .dedupKey(requestId) // 지금 구조 기준: requestId 기준 멱등
+                .build();
+    }
+
     public void markProcessing(String owner) {
         this.status = AuthErrorStatus.PROCESSING;
         this.processingOwner = owner;
