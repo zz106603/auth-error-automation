@@ -16,13 +16,7 @@ public class AuthErrorFacade {
     private final AuthErrorWriter authErrorWriter;
 
     public AuthErrorRecordResponse record(AuthErrorRecordRequest req) {
-
-        AuthError authError = AuthError.builder()
-                .requestId(req.requestId())
-                .occurredAt(req.occurredAt())
-                .build();
-
-        AuthErrorWriteResult result = authErrorWriter.record(authError);
+        AuthErrorWriteResult result = authErrorWriter.record(req.requestId(), req.occurredAt());
         return new AuthErrorRecordResponse(result.authErrorId(), result.outboxId());
     }
 }
