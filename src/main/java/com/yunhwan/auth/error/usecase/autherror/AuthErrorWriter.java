@@ -39,13 +39,13 @@ public class AuthErrorWriter {
      * 2) outbox_message UPSERT/RETURNING (멱등 보장)
      */
     @Transactional
-    public AuthErrorWriteResult record(AuthError authError) {
+    public AuthErrorWriteResult record(String requestId, OffsetDateTime occurredAt) {
         // 1) auth_error 저장
 
         OffsetDateTime now = OffsetDateTime.now(clock);
         AuthError toSave = AuthError.record(
-                authError.getRequestId(),
-                authError.getOccurredAt(),
+                requestId,
+                occurredAt,
                 now,
                 authErrorProperties.getSourceService(),
                 authErrorProperties.getEnvironment()
