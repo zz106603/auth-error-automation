@@ -23,8 +23,10 @@ public class RetryRoutingResolver {
     }
 
     public String resolve(int nextRetryCount) {
-        if (nextRetryCount <= 0) nextRetryCount = 1;
-
+        if (nextRetryCount <= 0) {
+            // 방어: 0 이하가 들어오면 첫 retry로 취급
+            nextRetryCount = 1;
+        }
         if (nextRetryCount <= props.getFastMax()) {
             return RabbitTopologyConfig.RETRY_RK_10S;
         }
