@@ -55,4 +55,10 @@ management:
 auth-error:
   source-service: ${spring.application.name}
   environment: local
-      
+  rabbit:
+    retry:
+      ttl10s: 2000
+      ttl1m: 5000
+      ttl10m: 10000
+      fast-max: 2
+      medium-max: 4
