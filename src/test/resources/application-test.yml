@@ -1,4 +1,7 @@
 spring:
+  application:
+    name: auth-error-automation
+
   datasource:
     driver-class-name: org.postgresql.Driver
     hikari:
@@ -48,3 +51,14 @@ outbox:
   reaper:
     stale-after-seconds: 5
     fixed-delay-ms: 500
+
+auth-error:
+  source-service: ${spring.application.name}
+  environment: test
+  rabbit:
+    retry:
+      ttl10s: 1000
+      ttl1m: 1000
+      ttl10m: 1000
+      fast-max: 1
+      medium-max: 1

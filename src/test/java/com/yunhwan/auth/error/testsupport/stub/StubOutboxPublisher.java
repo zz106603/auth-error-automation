@@ -1,7 +1,7 @@
 package com.yunhwan.auth.error.testsupport.stub;
 
 import com.yunhwan.auth.error.domain.outbox.OutboxMessage;
-import com.yunhwan.auth.error.domain.outbox.OutboxPublisher;
+import com.yunhwan.auth.error.usecase.outbox.port.OutboxPublisher;
 import org.springframework.context.annotation.Primary;
 import org.springframework.context.annotation.Profile;
 import org.springframework.stereotype.Component;

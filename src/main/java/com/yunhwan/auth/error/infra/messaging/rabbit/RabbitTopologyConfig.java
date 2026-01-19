@@ -29,10 +29,11 @@ public class RabbitTopologyConfig {
     public static final String RETRY_Q_1M  = "auth.error.retry.q.1m";
     public static final String RETRY_Q_10M = "auth.error.retry.q.10m";
 
-    // TTL(ms)
-    public static final int RETRY_TTL_10S = 10_000;
-    public static final int RETRY_TTL_1M  = 60_000;
-    public static final int RETRY_TTL_10M = 600_000;
+    private final RabbitRetryProperties retryProps;
+
+    public RabbitTopologyConfig(RabbitRetryProperties retryProps) {
+        this.retryProps = retryProps;
+    }
 
     @Bean
     public TopicExchange authErrorExchange() {
@@ -66,7 +67,7 @@ public class RabbitTopologyConfig {
     @Bean
     public Queue authErrorRetryQueue10s() {
         return QueueBuilder.durable(RETRY_Q_10S)
-                .withArgument("x-message-ttl", RETRY_TTL_10S)
+                .withArgument("x-message-ttl", retryProps.getTtl10s())
                 .withArgument("x-dead-letter-exchange", EXCHANGE)
                 .withArgument("x-dead-letter-routing-key", ROUTING_KEY)
                 .build();
@@ -76,7 +77,7 @@ public class RabbitTopologyConfig {
     @Bean
     public Queue authErrorRetryQueue1m() {
         return QueueBuilder.durable(RETRY_Q_1M)
-                .withArgument("x-message-ttl", RETRY_TTL_1M)
+                .withArgument("x-message-ttl", retryProps.getTtl1m())
                 .withArgument("x-dead-letter-exchange", EXCHANGE)
                 .withArgument("x-dead-letter-routing-key", ROUTING_KEY)
                 .build();
@@ -86,7 +87,7 @@ public class RabbitTopologyConfig {
     @Bean
     public Queue authErrorRetryQueue10m() {
         return QueueBuilder.durable(RETRY_Q_10M)
-                .withArgument("x-message-ttl", RETRY_TTL_10M)
+                .withArgument("x-message-ttl", retryProps.getTtl10m())
                 .withArgument("x-dead-letter-exchange", EXCHANGE)
                 .withArgument("x-dead-letter-routing-key", ROUTING_KEY)
                 .build();

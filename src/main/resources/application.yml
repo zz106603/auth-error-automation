@@ -25,3 +25,12 @@ outbox:
     stale-after-seconds: 300
     batch-size: 100
     fixed-delay-ms: 5000
+
+auth-error:
+  rabbit:
+    retry:
+      ttl10s: 10000
+      ttl1m: 60000
+      ttl10m: 600000
+      fast-max: 3
+      medium-max: 6
