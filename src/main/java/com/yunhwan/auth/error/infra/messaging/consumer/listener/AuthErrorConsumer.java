@@ -23,6 +23,8 @@ import java.time.OffsetDateTime;
 import java.util.HashMap;
 import java.util.Map;
 
+import static com.yunhwan.auth.error.domain.consumer.ProcessedStatus.*;
+
 @Slf4j
 @Component
 @RequiredArgsConstructor
@@ -60,61 +62,55 @@ public class AuthErrorConsumer {
         OffsetDateTime leaseUntil = now.plusSeconds(LEASE_DURATION.getSeconds());
 
         // 2) 선점
-        int claimed = processedMessageStore.claimProcessing(
-                outboxId, now, leaseUntil,
-                ProcessedStatus.PROCESSING.name()
-        );
+        processedMessageStore.ensureRowExists(outboxId, now);
+        int claimed = processedMessageStore.claimProcessingUpdate(outboxId, now, leaseUntil);
         if (claimed == 0) {
-            // 누군가 처리 중(lease 유효) 또는 이미 DONE
+            ProcessedStatus status = processedMessageStore.findStatusByOutboxId(outboxId).orElse(null);
+            log.warn("[AuthErrorConsumer] claim failed -> ack(drop). outboxId={}, status={}", outboxId, status);
             channel.basicAck(tag, false);
             return;
         }
 
-        int currentRetry = HeaderUtils.getRetryCount(message.getMessageProperties().getHeaders());
-
         try {
+            int currentRetry = HeaderUtils.getRetryCount(message.getMessageProperties().getHeaders());
             // 3) handler 위임
             handler.handle(payload, buildHeaders(outboxId, eventType, aggregateType, currentRetry));
 
             // 4) 성공 확정
-            processedMessageStore.markDone(
-                    outboxId, OffsetDateTime.now(),
-                    ProcessedStatus.DONE.name(),
-                    ProcessedStatus.PROCESSING.name()
-            );
+            processedMessageStore.markDone(outboxId, OffsetDateTime.now());
 
             channel.basicAck(tag, false);
         } catch (Exception e) {
-            OutboxDecision decision = decisionMaker.decide(now, currentRetry, e);
+            log.error("error 발생");
+            int currentRetrySafe;
+            try {
+                currentRetrySafe = HeaderUtils.getRetryCount(message.getMessageProperties().getHeaders());
+            } catch (Exception ignore) {
+                currentRetrySafe = 0;
+            }
+
+            OutboxDecision decision = decisionMaker.decide(now, currentRetrySafe, e);
 
             if (decision.isDead()) {
-                // ✅ 여기서 DB 상태도 정리해두는 걸 추천(최소 DONE 처리라도)
-                processedMessageStore.markDone(
-                        outboxId, OffsetDateTime.now(),
-                        ProcessedStatus.DONE.name(),
-                        ProcessedStatus.PROCESSING.name()
-                );
+                processedMessageStore.markDead(outboxId, now, decision.lastError());
 
-                log.error("[AuthErrorConsumer] DEAD -> DLQ outboxId={}, nextRetry={}, err={}",
-                        outboxId, decision.nextRetryCount(), decision.lastError(), e);
-
+                log.error("[AuthErrorConsumer] DEAD -> DLQ outboxId={}, err={}", outboxId, decision.lastError(), e);
+                // DLQ 격리
                 channel.basicReject(tag, false);
                 return;
             }
 
-            // RETRY
-            log.warn("[AuthErrorConsumer] RETRY outboxId={}, nextRetry={}, at={}, err={}",
-                    outboxId, decision.nextRetryCount(), decision.nextRetryAt(), decision.lastError(), e);
+            // 실패 기록: PROCESSING -> RETRY_WAIT (DB에 retry 정책을 기록)
+            processedMessageStore.markRetryWait(
+                    outboxId,
+                    now,
+                    decision.nextRetryAt(),
+                    decision.nextRetryCount(),
+                    decision.lastError()
+            );
 
             // 재발행(헤더 유지 + retry 갱신)
             republishToRetryExchange(payload, message, decision);
-
-            // lease 만료/해제 (다음 메시지가 선점 가능하게)
-            processedMessageStore.releaseLeaseForRetry(
-                    outboxId,
-                    now,
-                    ProcessedStatus.PROCESSING.name()
-            );
 
             // 원본 메시지 ACK
             channel.basicAck(tag, false);
