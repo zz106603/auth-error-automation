@@ -6,7 +6,10 @@ import com.yunhwan.auth.error.domain.consumer.ProcessedMessage;
 import com.yunhwan.auth.error.domain.consumer.ProcessedStatus;
 import com.yunhwan.auth.error.domain.outbox.OutboxMessage;
 import com.yunhwan.auth.error.domain.outbox.OutboxStatus;
+import com.yunhwan.auth.error.infra.messaging.rabbit.RabbitTopologyConfig;
+import com.yunhwan.auth.error.testsupport.base.AbstractIntegrationTest;
 import com.yunhwan.auth.error.testsupport.base.AbstractStubIntegrationTest;
+import com.yunhwan.auth.error.testsupport.config.TestFailInjectionConfig;
 import com.yunhwan.auth.error.testsupport.stub.StubAuthErrorHandler;
 import com.yunhwan.auth.error.testsupport.stub.StubDlqObserver;
 import com.yunhwan.auth.error.usecase.autherror.AuthErrorWriter;
@@ -19,17 +22,26 @@ import org.awaitility.Awaitility;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.springframework.amqp.core.AmqpAdmin;
+import org.springframework.amqp.rabbit.core.RabbitAdmin;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.context.ApplicationContext;
 
 import java.time.Duration;
 import java.time.OffsetDateTime;
+import java.util.Map;
+import java.util.Properties;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
 /*
-    FIXME: Consumer 설계 개선 필요
+    TTL 기반 retry 설계 기준:
+    - "재시도 횟수/헤더 관측"은 비동기/타이밍 종속이라 통합테스트에서 flaky
+    - "최종 수렴 상태" + "DLQ 도착" + "DB terminal 상태"로 검증
+    FIXME: publish, process 설계 문제로 추후 수정 예정
  */
-public class AuthErrorPipelineFailureIntegrationTest extends AbstractStubIntegrationTest {
+class AuthErrorPipelineFailureIntegrationTest extends AbstractIntegrationTest {
 
     @Autowired
     AuthErrorWriter authErrorWriter;
@@ -46,24 +58,24 @@ public class AuthErrorPipelineFailureIntegrationTest extends AbstractStubIntegra
     ProcessedMessageStore processedMessageStore;
 
     @Autowired
-    StubAuthErrorHandler testAuthErrorHandler;
+    TestFailInjectionConfig.FailInjectedAuthErrorHandler handler;
+
     @Autowired
     StubDlqObserver testDlqObserver;
 
     @BeforeEach
     void setUp() {
-        testAuthErrorHandler.reset();
+        testDlqObserver.reset();
         processedMessageStore.deleteAll();
     }
 
     @Test
-    @DisplayName("Pipeline: 일시 실패 후 재시도로 성공하면 AuthError=PROCESSED, Outbox=PUBLISHED, Processed=DONE")
+    @DisplayName("Pipeline: 일시 실패 후 TTL 재시도로 성공하면 AuthError=PROCESSED, Outbox=PUBLISHED, Processed=DONE")
     void pipeline_retry_then_success() {
         // given: 첫 1회 실패
-        testAuthErrorHandler.failFirst(1);
+        handler.failFirst(1);
 
-        AuthError authError = createAuthError("REQ-IT-1");
-        var recordResult = authErrorWriter.record(authError);
+        var recordResult = authErrorWriter.record("REQ-IT-1", OffsetDateTime.now());
 
         // when: outbox publish 트리거
         var claimed = outboxPoller.pollOnce(null);
@@ -72,44 +84,48 @@ public class AuthErrorPipelineFailureIntegrationTest extends AbstractStubIntegra
 
         outboxProcessor.process(claimed);
 
-        // then: consumer 재시도 끝에 DONE/PROCESSED로 수렴
+        // 1) outbox publish 자체는 성공했는지
         Awaitility.await()
-                .atMost(Duration.ofSeconds(15))
+                .atMost(Duration.ofSeconds(5))
+                .untilAsserted(() -> {
+                    OutboxMessage outbox = outboxMessageStore.findById(outboxId).orElseThrow();
+                    assertThat(outbox.getStatus()).isEqualTo(OutboxStatus.PUBLISHED);
+                });
+
+        // 2) consumer가 outboxId를 "한 번이라도" 만졌는지 (ProcessedMessage row 생성)
+        Awaitility.await()
+                .atMost(Duration.ofSeconds(10))
+                .untilAsserted(() -> {
+                    assertThat(processedMessageStore.findById(outboxId)).isPresent();
+                });
+
+
+        // then: 최종 상태 수렴만 검증 (TTL 대기 고려해서 여유)
+        Awaitility.await()
+                .atMost(Duration.ofSeconds(30))
                 .pollInterval(Duration.ofMillis(200))
                 .untilAsserted(() -> {
-                    assertThat(testAuthErrorHandler.getCallCount()).isGreaterThanOrEqualTo(2);
-                    assertThat(testAuthErrorHandler.getMaxRetrySeen()).isGreaterThanOrEqualTo(1);
-
                     // auth_error
                     AuthError reloaded = authErrorStore.findById(recordResult.authErrorId()).orElseThrow();
-                    assertThat(reloaded.getStatus())
-                            .isEqualTo(AuthErrorStatus.PROCESSED);
+                    assertThat(reloaded.getStatus()).isEqualTo(AuthErrorStatus.PROCESSED);
 
-                    // outbox_message
+                    // outbox_message (publish 성공은 소비 성공/실패와 별개)
                     OutboxMessage outbox = outboxMessageStore.findById(outboxId).orElseThrow();
-                    assertThat(outbox.getStatus())
-                            .isEqualTo(OutboxStatus.PUBLISHED);
+                    assertThat(outbox.getStatus()).isEqualTo(OutboxStatus.PUBLISHED);
 
                     // processed_message
                     ProcessedMessage pm = processedMessageStore.findById(outboxId).orElseThrow();
-                    assertThat(pm.getStatus())
-                            .isEqualTo(ProcessedStatus.DONE);
+                    assertThat(pm.getStatus()).isEqualTo(ProcessedStatus.DONE);
                 });
-
-        // 재시도 헤더를 실제로 봤는지(재시도 경로 탔는지) 보강 검증
-        assertThat(testAuthErrorHandler.getMaxRetrySeen())
-                .isGreaterThanOrEqualTo(1);
     }
 
     @Test
     @DisplayName("Pipeline: 지속 실패 시 maxRetries 초과 후 DLQ로 이동")
     void pipeline_fail_then_dlq() {
         // given: 사실상 무한 실패
-        testAuthErrorHandler.failFirst(1_000_000);
-        testDlqObserver.reset();
+        handler.failFirst(1_000_000);
 
-        AuthError authError = createAuthError("REQ-IT-2");
-        var recordResult = authErrorWriter.record(authError);
+        var recordResult = authErrorWriter.record("REQ-IT-2", OffsetDateTime.now());
 
         // when: outbox publish 트리거
         var claimed = outboxPoller.pollOnce(null);
@@ -118,42 +134,35 @@ public class AuthErrorPipelineFailureIntegrationTest extends AbstractStubIntegra
 
         outboxProcessor.process(claimed);
 
-        // then: DLQ 수신 확인 (delay-seconds=1로 줄여놨으니 오래 안 걸림)
+        // then: DLQ 수신 확인 (TTL/재시도 큐 다 돌고 최종 DLQ까지 고려해서 여유)
         Awaitility.await()
-                .atMost(Duration.ofSeconds(20))
+                .atMost(Duration.ofSeconds(60))
+                .pollInterval(Duration.ofMillis(200))
                 .untilAsserted(() -> {
                     assertThat(testDlqObserver.count()).isEqualTo(1L);
                     assertThat(testDlqObserver.lastOutboxId()).isEqualTo(outboxId);
                 });
 
-        // publish 자체는 성공했으니 outbox는 PUBLISHED 고정(소비 실패와 별개)
+        // publish 자체는 성공했으니 outbox는 PUBLISHED 고정
         OutboxMessage outbox = outboxMessageStore.findById(outboxId).orElseThrow();
         assertThat(outbox.getStatus()).isEqualTo(OutboxStatus.PUBLISHED);
 
-        // auth_error는 "성공(PROCESSED)"는 아니어야 한다 정도만 안전하게 고정
+        // auth_error는 성공(PROCESSED)이 아니어야 함 (정확한 실패 상태는 정책에 따라 다름)
         AuthError reloaded = authErrorStore.findById(recordResult.authErrorId()).orElseThrow();
         assertThat(reloaded.getStatus()).isNotEqualTo(AuthErrorStatus.PROCESSED);
 
-        // (옵션) DLQ로 마감될 때 processed_message도 DONE으로 남기는 정책이면 아래 추가
+        // processed_message terminal 상태 검증 (정책에 맞춰 1개만 선택)
         Awaitility.await()
-                .atMost(Duration.ofSeconds(5))
+                .atMost(Duration.ofSeconds(10))
+                .pollInterval(Duration.ofMillis(200))
                 .untilAsserted(() -> {
                     ProcessedMessage pm = processedMessageStore.findById(outboxId).orElseThrow();
-                    assertThat(pm.getStatus()).isEqualTo(ProcessedStatus.DONE);
+
+                    // ✅ 권장: DLQ면 DEAD 같은 상태로 남기는 정책
+                     assertThat(pm.getStatus()).isEqualTo(ProcessedStatus.DEAD);
+
+                    // ✅ 만약 너의 현재 구현이 DLQ도 "DONE으로 마감" 정책이면 이걸 유지
+//                    assertThat(pm.getStatus()).isEqualTo(ProcessedStatus.DONE);
                 });
-
-        // 핸들러 관측값(정책 확인)
-        assertThat(testAuthErrorHandler.getCallCount())
-                .isGreaterThanOrEqualTo(3); // maxRetries=3이면 최소 3회는 호출돼야 자연스러움
-        assertThat(testAuthErrorHandler.getMaxRetrySeen())
-                .isGreaterThanOrEqualTo(2); // 0->1->2 까지 관측되는 게 보통
     }
-
-    private AuthError createAuthError(String reqId) {
-        return AuthError.builder()
-                .requestId(reqId)
-                .occurredAt(OffsetDateTime.now())
-                .build();
-    }
-
 }

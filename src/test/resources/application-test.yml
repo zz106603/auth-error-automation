@@ -39,6 +39,10 @@ spring:
       simple:
         auto-startup: true
         acknowledge-mode: manual
+        prefetch: 1
+      direct:
+        auto-startup: true
+        acknowledge-mode: manual
 
 # === Outbox 테스트 튜닝 ===
 outbox:
