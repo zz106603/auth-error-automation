@@ -1,6 +1,7 @@
 package com.yunhwan.auth.error.infra.persistence.jpa;
 
 import com.yunhwan.auth.error.domain.consumer.ProcessedMessage;
+import com.yunhwan.auth.error.domain.consumer.ProcessedStatus;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
@@ -16,59 +17,107 @@ public interface ProcessedMessageJpaRepository extends JpaRepository<ProcessedMe
     boolean existsByOutboxId(Long outboxId);
 
     /**
-     * 선점(claim):
-     * - row가 없으면 새로 만들어 PROCESSING + lease 설정
-     * - row가 있는데 DONE이면 선점 실패(0)
-     * - row가 PROCESSING이라도 lease가 만료됐으면 lease 갱신하며 선점 성공(1)
-     * - row가 PROCESSING인데 lease가 아직 유효하면 선점 실패(0)
+     *  1) row 없으면 PENDING 생성
      */
     @Transactional
     @Modifying
     @Query(value = """
-        insert into processed_message(outbox_id, status, lease_until, updated_at)
-        values (:outboxId, :status, :leaseUntil, :now)
-        on conflict (outbox_id) do update
-           set status = :status,
-               lease_until = :leaseUntil,
-               updated_at = :now
-         where processed_message.status = :status
-           and (processed_message.lease_until is null or processed_message.lease_until <= :now)
-        """, nativeQuery = true)
-    int claimProcessing(@Param("outboxId") long outboxId,
-                        @Param("now") OffsetDateTime now,
-                        @Param("leaseUntil") OffsetDateTime leaseUntil,
-                        @Param("status") String status);
+    insert into processed_message (outbox_id, status, retry_count, next_retry_at, updated_at)
+    values (:outboxId, 'PENDING', 0, null, :now)
+    on conflict (outbox_id) do nothing
+    """, nativeQuery = true)
+    void ensureRowExists(@Param("outboxId") long outboxId,
+                         @Param("now") OffsetDateTime now);
 
     /**
-     * 완료 확정(DONE):
-     * - PROCESSING인 row만 DONE으로 변경 (이미 DONE이면 0)
+     *
+     * 2) PENDING/RETRY_WAIT 이면서 lease 만료면 PROCESSING 선점
+     *    (지연은 Rabbit TTL이 보장하므로 next_retry_at으로 가드하지 않음)
+     */
+    @Transactional
+    @Modifying
+    @Query(value = """
+    update processed_message
+       set status = 'PROCESSING',
+           lease_until = :leaseUntil,
+           updated_at = :now
+     where outbox_id = :outboxId
+       and (
+            status = 'PENDING'
+            or (status = 'RETRY_WAIT'
+                and next_retry_at is not null
+                and next_retry_at <= :now)
+            or (status = 'PROCESSING'
+                and lease_until is not null
+                and lease_until <= :now)
+       )
+    """, nativeQuery = true)
+    int claimProcessingUpdate(@Param("outboxId") long outboxId,
+                              @Param("now") OffsetDateTime now,
+                              @Param("leaseUntil") OffsetDateTime leaseUntil);
+
+    /**
+     * 성공 확정: PROCESSING -> DONE
      */
     @Transactional
     @Modifying
     @Query(value = """
         update processed_message
-           set status = :doneStatus,
-               processed_at = :now,
+           set status = 'DONE',
                lease_until = null,
+               next_retry_at = null,
+               last_error = null,
+               processed_at = :now,
                updated_at = :now
          where outbox_id = :outboxId
-           and status = :processingStatus
+           and status = 'PROCESSING'
         """, nativeQuery = true)
     int markDone(@Param("outboxId") long outboxId,
-                 @Param("now") OffsetDateTime now,
-                 @Param("doneStatus") String doneStatus,
-                 @Param("processingStatus") String processingStatus);
+                 @Param("now") OffsetDateTime now);
+
+    /**
+     * 재시도 대기 전환: PROCESSING -> RETRY_WAIT
+     */
+    @Transactional
+    @Modifying
+    @Query(value = """
+        update processed_message
+           set status = 'RETRY_WAIT',
+               lease_until = null,
+               retry_count = :nextRetryCount,
+               next_retry_at = :nextRetryAt,
+               last_error = :lastError,
+               updated_at = :now
+         where outbox_id = :outboxId
+           and status = 'PROCESSING'
+        """, nativeQuery = true)
+    int markRetryWait(@Param("outboxId") long outboxId,
+                      @Param("now") OffsetDateTime now,
+                      @Param("nextRetryAt") OffsetDateTime nextRetryAt,
+                      @Param("nextRetryCount") int nextRetryCount,
+                      @Param("lastError") String lastError);
 
     @Transactional
     @Modifying
     @Query(value = """
     update processed_message
-       set lease_until = :now,
+       set status = 'DEAD',
+           lease_until = null,
+           next_retry_at = null,
+           last_error = :lastError,
+           dead_at = :now,
            updated_at = :now
      where outbox_id = :outboxId
-       and status = :status
+       and status = 'PROCESSING'
     """, nativeQuery = true)
-    int releaseLeaseForRetry(@Param("outboxId") long outboxId,
-                             @Param("now") OffsetDateTime now,
-                             @Param("status") String status);
+    int markDead(@Param("outboxId") long outboxId,
+                 @Param("now") OffsetDateTime now,
+                 @Param("lastError") String lastError);
+
+    @Query(value = """
+    select status
+      from processed_message
+     where outbox_id = :outboxId
+    """, nativeQuery = true)
+    ProcessedStatus findStatusByOutboxId(@Param("outboxId") long outboxId);
 }

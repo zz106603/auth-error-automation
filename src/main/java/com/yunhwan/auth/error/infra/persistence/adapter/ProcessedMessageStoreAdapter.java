@@ -1,6 +1,7 @@
 package com.yunhwan.auth.error.infra.persistence.adapter;
 
 import com.yunhwan.auth.error.domain.consumer.ProcessedMessage;
+import com.yunhwan.auth.error.domain.consumer.ProcessedStatus;
 import com.yunhwan.auth.error.infra.persistence.jpa.ProcessedMessageJpaRepository;
 import com.yunhwan.auth.error.usecase.consumer.port.ProcessedMessageStore;
 import lombok.RequiredArgsConstructor;
@@ -43,17 +44,32 @@ public class ProcessedMessageStoreAdapter implements ProcessedMessageStore {
     }
 
     @Override
-    public int claimProcessing(long outboxId, OffsetDateTime now, OffsetDateTime leaseUntil, String status) {
-        return repo.claimProcessing(outboxId, now, leaseUntil, status);
+    public void ensureRowExists(long outboxId, OffsetDateTime now) {
+        repo.ensureRowExists(outboxId, now);
     }
 
     @Override
-    public int markDone(long outboxId, OffsetDateTime now, String doneStatus, String processingStatus) {
-        return repo.markDone(outboxId, now, doneStatus, processingStatus);
+    public int claimProcessingUpdate(long outboxId, OffsetDateTime now, OffsetDateTime leaseUntil) {
+        return repo.claimProcessingUpdate(outboxId, now, leaseUntil);
     }
 
     @Override
-    public int releaseLeaseForRetry(long outboxId, OffsetDateTime now, String status) {
-        return repo.releaseLeaseForRetry(outboxId, now, status);
+    public int markDone(long outboxId, OffsetDateTime now) {
+        return repo.markDone(outboxId, now);
+    }
+
+    @Override
+    public int markRetryWait(long outboxId, OffsetDateTime now, OffsetDateTime nextRetryAt, int nextRetryCount, String lastError){
+        return repo.markRetryWait(outboxId, now, nextRetryAt, nextRetryCount, lastError);
+    }
+
+    @Override
+    public int markDead(long outboxId, OffsetDateTime now, String lastError) {
+        return repo.markDead(outboxId, now, lastError);
+    }
+
+    @Override
+    public Optional<ProcessedStatus> findStatusByOutboxId(long outboxId) {
+        return Optional.ofNullable(repo.findStatusByOutboxId(outboxId));
     }
 }
