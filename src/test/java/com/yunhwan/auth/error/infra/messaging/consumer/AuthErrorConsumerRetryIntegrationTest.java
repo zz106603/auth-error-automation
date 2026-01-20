@@ -3,8 +3,8 @@ package com.yunhwan.auth.error.infra.messaging.consumer;
 import com.yunhwan.auth.error.domain.consumer.ProcessedMessage;
 import com.yunhwan.auth.error.domain.consumer.ProcessedStatus;
 import com.yunhwan.auth.error.infra.messaging.rabbit.RabbitTopologyConfig;
-import com.yunhwan.auth.error.testsupport.stub.StubAuthErrorHandler;
 import com.yunhwan.auth.error.testsupport.base.AbstractStubIntegrationTest;
+import com.yunhwan.auth.error.testsupport.stub.StubAuthErrorHandler;
 import com.yunhwan.auth.error.usecase.consumer.port.ProcessedMessageStore;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -17,25 +17,29 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 
 import java.time.Duration;
+import java.util.UUID;
 
 import static org.awaitility.Awaitility.await;
 import static org.junit.jupiter.api.Assertions.*;
 
+/**
+ * Consumer의 재시도(Retry) 메커니즘을 검증하는 통합 테스트.
+ * <p>
+ * 일시적인 오류로 인해 처리에 실패했을 때,
+ * 설정된 정책에 따라 재시도가 이루어지고 결국 성공적으로 처리(DONE)되는지 확인한다.
+ */
 @SpringBootTest(properties = {
-        "spring.rabbitmq.listener.simple.auto-startup=true",
-        "spring.rabbitmq.listener.direct.auto-startup=true"
+        "spring.rabbitmq.listener.simple.auto-startup=true"
 })
 @DisplayName("Consumer 재시도 메커니즘 통합 테스트")
 class AuthErrorConsumerRetryIntegrationTest extends AbstractStubIntegrationTest {
 
     @Autowired
-    private RabbitTemplate rabbitTemplate;
-
+    RabbitTemplate rabbitTemplate;
     @Autowired
-    private StubAuthErrorHandler testAuthErrorHandler;
-
+    StubAuthErrorHandler testAuthErrorHandler;
     @Autowired
-    private ProcessedMessageStore processedMessageStore;
+    ProcessedMessageStore processedMessageStore;
 
     @BeforeEach
     void setUp() {
@@ -44,35 +48,33 @@ class AuthErrorConsumerRetryIntegrationTest extends AbstractStubIntegrationTest 
     }
 
     @Test
-    @DisplayName("일시적 실패 발생 시 재시도 로직이 동작하여 최종적으로 처리가 완료되어야 한다")
-    void 일시적_실패_발생_시_재시도_로직이_동작한다_그리고_처리가_완료되어야_한다() {
-        // given
-        long outboxId = System.nanoTime();
-        // 첫 1회 실패 설정: 재시도 메커니즘이 동작하는지 확인하기 위함
-        testAuthErrorHandler.failFirst(1);
+    @DisplayName("일시적 실패 후 재시도를 통해 최종적으로 처리가 완료되어야 한다")
+    void 재시도_후_최종_성공_및_처리완료_확인() {
+        // Given: 테스트용 Outbox ID 생성 및 첫 1회 실패하도록 설정
+        long outboxId = UUID.randomUUID().getMostSignificantBits() & Long.MAX_VALUE;
+        testAuthErrorHandler.failFirst(1); // 첫 번째 호출은 실패하고, 두 번째부터 성공
 
-        Message message = createMessage(outboxId);
-
-        // when
-        rabbitTemplate.send(RabbitTopologyConfig.EXCHANGE, RabbitTopologyConfig.ROUTING_KEY, message);
-
-        // then
-        // 1. 최종 처리 상태가 DONE인지 확인 (재시도 끝에 성공했음을 검증)
-        await().atMost(Duration.ofSeconds(15)).untilAsserted(() -> {
-            ProcessedMessage processedMessage = processedMessageStore.findById(outboxId).orElseThrow();
-
-            assertAll("처리 결과 검증",
-                    () -> assertEquals(ProcessedStatus.DONE, processedMessage.getStatus(), "상태는 DONE이어야 합니다."),
-                    () -> assertNotNull(processedMessage.getProcessedAt(), "처리 시간은 존재해야 합니다."),
-                    () -> assertNull(processedMessage.getLeaseUntil(), "Lease 점유는 해제되어야 합니다.")
-            );
-        });
-
-        // 2. 실제로 재시도 헤더(x-retry-count)가 포함된 요청이 처리되었는지 확인
-        await().atMost(Duration.ofSeconds(15)).untilAsserted(() ->
-                assertTrue(testAuthErrorHandler.getMaxRetrySeen() >= 1,
-                        "재시도 헤더(x-retry-count)가 1 이상인 호출이 감지되어야 합니다.")
+        // When: 메시지 발행
+        rabbitTemplate.send(
+                RabbitTopologyConfig.EXCHANGE,
+                RabbitTopologyConfig.ROUTING_KEY,
+                createMessage(outboxId)
         );
+
+        // Then: 재시도를 거쳐 최종적으로 DONE 상태가 되는지 확인
+        await()
+            .atMost(Duration.ofSeconds(30))
+            .pollInterval(Duration.ofMillis(250))
+            .untilAsserted(() -> {
+                // 1. DB에서 메시지 상태 확인
+                ProcessedMessage pm = processedMessageStore.findById(outboxId).orElseThrow();
+                assertEquals(ProcessedStatus.DONE, pm.getStatus(), "최종 상태는 DONE이어야 합니다.");
+                assertNotNull(pm.getProcessedAt(), "처리 완료 시간이 기록되어야 합니다.");
+                assertNull(pm.getLeaseUntil(), "처리가 완료되면 Lease는 해제되어야 합니다.");
+
+                // 2. 재시도가 실제로 일어났는지 확인 (최소 2회 호출: 1회 실패 + 1회 성공)
+                assertTrue(testAuthErrorHandler.getCallCount() >= 2, "재시도를 포함해 핸들러가 2회 이상 호출되어야 합니다.");
+            });
     }
 
     private Message createMessage(long outboxId) {

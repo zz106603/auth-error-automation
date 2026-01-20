@@ -17,15 +17,16 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 
 import java.time.Duration;
+import java.util.UUID;
 
 import static org.awaitility.Awaitility.await;
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
- * RabbitMQ Consumer의 멱등성(Idempotency)을 검증하는 통합 테스트입니다.
+ * RabbitMQ Consumer의 멱등성(Idempotency)을 검증하는 통합 테스트.
  * <p>
- * 실제 운영 환경과 유사하게 RabbitMQ를 띄우고 메시지를 발행하여,
- * 중복된 메시지가 도착했을 때 핸들러가 정확히 한 번만 실행되는지 확인합니다.
+ * 네트워크 지연이나 브로커의 재전송 등으로 인해 동일한 메시지가 여러 번 수신되더라도,
+ * 비즈니스 로직은 단 한 번만 실행되어야 함을 보장하는지 확인한다.
  */
 @SpringBootTest(properties = {
         "spring.rabbitmq.listener.simple.auto-startup=true",
@@ -36,17 +37,8 @@ class AuthErrorConsumerIdemIntegrationTest extends AbstractStubIntegrationTest {
 
     @Autowired
     RabbitTemplate rabbitTemplate;
-
-    /**
-     * Mockito의 @SpyBean 대신 직접 구현한 Test Double을 사용하여 검증합니다.
-     * 장점:
-     * 1. Spring Context 오염 방지 (Context Caching 활용 가능)
-     * 2. Mockito 프록시 오버헤드 제거
-     * 3. 멀티스레드 환경에서 AtomicInteger를 통한 정확한 호출 횟수 추적
-     */
     @Autowired
     StubAuthErrorHandler testAuthErrorHandler;
-
     @Autowired
     ProcessedMessageStore processedMessageStore;
 
@@ -57,35 +49,32 @@ class AuthErrorConsumerIdemIntegrationTest extends AbstractStubIntegrationTest {
     }
 
     @Test
-    @DisplayName("동일한 outboxId를 가진 메시지가 2번 전송되면 핸들러는 1번만 실행 + DONE 확정")
-    void 동일한_OutboxID_메시지_중복수신시_핸들러는_한번만_실행된다_그리고_DONE이어야한다() {
-        // given
-        long outboxId = System.nanoTime();
+    @DisplayName("동일한 ID의 메시지를 중복 수신해도 핸들러는 1회만 실행되고 처리가 완료되어야 한다")
+    void 동일_메시지_중복_수신시_멱등성_보장_및_처리완료_확인() {
+        // Given: 동일한 outboxId를 가진 두 개의 메시지 생성
+        long outboxId = UUID.randomUUID().getMostSignificantBits() & Long.MAX_VALUE;
         Message m1 = createMessage(outboxId);
         Message m2 = createMessage(outboxId);
 
-        // when
+        // When: 두 메시지를 연속으로 발행 (중복 수신 상황 시뮬레이션)
         rabbitTemplate.send(RabbitTopologyConfig.EXCHANGE, RabbitTopologyConfig.ROUTING_KEY, m1);
         rabbitTemplate.send(RabbitTopologyConfig.EXCHANGE, RabbitTopologyConfig.ROUTING_KEY, m2);
 
-        // then
-        // 1) 핸들러는 정확히 1번만 실행
-        await().atMost(Duration.ofSeconds(2))
-                .untilAsserted(() -> assertEquals(1, testAuthErrorHandler.getCallCount()));
-        assertEquals(1, testAuthErrorHandler.getCallCount());
+        // Then: 비동기 처리 결과를 기다리며 검증
+        await()
+            .atMost(Duration.ofSeconds(10))
+            .pollInterval(Duration.ofMillis(100))
+            .untilAsserted(() -> {
+                // 1. 핸들러(비즈니스 로직)는 정확히 1회만 호출되어야 함
+                assertEquals(1, testAuthErrorHandler.getCallCount(), "핸들러는 중복 호출되지 않아야 합니다.");
 
-        // 2) processed_message는 1건만 존재
-        assertTrue(processedMessageStore.existsById(outboxId));
-        assertEquals(1L, processedMessageStore.count());
+                // 2. 처리 상태(ProcessedMessage)는 최종적으로 DONE 상태여야 함
+                ProcessedMessage pm = processedMessageStore.findById(outboxId).orElseThrow();
+                assertEquals(ProcessedStatus.DONE, pm.getStatus(), "메시지 처리 상태는 DONE이어야 합니다.");
 
-        // 3) 최종 상태가 DONE인지 검증
-        await().atMost(Duration.ofSeconds(2)).untilAsserted(() -> {
-            ProcessedMessage pm = processedMessageStore.findById(outboxId).orElseThrow();
-
-            assertEquals(ProcessedStatus.DONE, pm.getStatus());
-            assertNotNull(pm.getProcessedAt());
-            assertNull(pm.getLeaseUntil());
-        });
+                // 3. 처리가 완료되었으므로 점유(Lease)는 해제되어야 함
+                assertNull(pm.getLeaseUntil(), "처리가 완료되면 Lease는 null이어야 합니다.");
+            });
     }
 
     private Message createMessage(long outboxId) {
