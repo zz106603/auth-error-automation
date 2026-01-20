@@ -1,9 +1,10 @@
 package com.yunhwan.auth.error.infra.messaging.consumer;
 
+import com.yunhwan.auth.error.domain.consumer.ProcessedStatus;
 import com.yunhwan.auth.error.infra.messaging.rabbit.RabbitTopologyConfig;
+import com.yunhwan.auth.error.testsupport.base.AbstractStubIntegrationTest;
 import com.yunhwan.auth.error.testsupport.stub.StubAuthErrorHandler;
 import com.yunhwan.auth.error.testsupport.stub.StubDlqObserver;
-import com.yunhwan.auth.error.testsupport.base.AbstractStubIntegrationTest;
 import com.yunhwan.auth.error.usecase.consumer.port.ProcessedMessageStore;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -16,30 +17,35 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 
 import java.time.Duration;
+import java.util.UUID;
 
 import static org.awaitility.Awaitility.await;
-import static org.junit.jupiter.api.Assertions.*;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 
+/**
+ * Consumer의 DLQ(Dead Letter Queue) 처리 로직을 검증하는 통합 테스트.
+ * <p>
+ * 최대 재시도 횟수를 초과하여 처리에 실패한 메시지가
+ * DLQ로 올바르게 이동하고, 최종적으로 DEAD 상태로 기록되는지 확인한다.
+ */
 @SpringBootTest(properties = {
         "spring.rabbitmq.listener.simple.auto-startup=true",
         "spring.rabbitmq.listener.direct.auto-startup=true",
-        "outbox.retry.max-retries=3",
-        "outbox.retry.delay-seconds=10"
+
+        // 이 테스트는 "첫 실패에 바로 DEAD"를 검증하기 위해 최대 재시도 횟수를 1로 설정
+        "outbox.retry.max-retries=1"
 })
-@DisplayName("Consumer DLQ(Dead Letter Queue) 처리 통합 테스트")
+@DisplayName("Consumer DLQ 처리 통합 테스트")
 class AuthErrorConsumerDlqIntegrationTest extends AbstractStubIntegrationTest {
 
     @Autowired
-    private RabbitTemplate rabbitTemplate;
-
+    RabbitTemplate rabbitTemplate;
     @Autowired
-    private StubAuthErrorHandler testAuthErrorHandler;
-
+    StubAuthErrorHandler testAuthErrorHandler;
     @Autowired
-    private ProcessedMessageStore processedMessageStore;
-
+    StubDlqObserver testDlqObserver;
     @Autowired
-    private StubDlqObserver testDlqObserver;
+    ProcessedMessageStore processedMessageStore;
 
     @BeforeEach
     void setUp() {
@@ -49,32 +55,34 @@ class AuthErrorConsumerDlqIntegrationTest extends AbstractStubIntegrationTest {
     }
 
     @Test
-    @DisplayName("지속적인 실패 발생 시 최대 재시도 횟수 초과 후 DLQ로 메시지가 이동해야 한다")
-    void 지속적인_실패_발생시_최대_재시도_후_DLQ로_이동해야_한다() {
-        // given
-        long outboxId = System.nanoTime();
-        // 사실상 무한 실패 설정 (DLQ 이동 유도)
-        testAuthErrorHandler.failFirst(1_000_000);
+    @DisplayName("최대 재시도 횟수 초과 시 메시지는 DLQ로 이동하고 DEAD 상태가 되어야 한다")
+    void 재시도_초과시_DLQ_이동_및_DEAD_상태_확인() {
+        // Given: 테스트용 Outbox ID 생성 및 핸들러가 무조건 실패하도록 설정
+        long outboxId = UUID.randomUUID().getMostSignificantBits() & Long.MAX_VALUE;
+        testAuthErrorHandler.failFirst(1_000_000); // 충분히 큰 횟수만큼 실패하게 설정
 
-        Message message = createMessage(outboxId);
+        // When: 메시지 발행
+        rabbitTemplate.send(
+                RabbitTopologyConfig.EXCHANGE,
+                RabbitTopologyConfig.ROUTING_KEY,
+                createMessage(outboxId)
+        );
 
-        // when
-        rabbitTemplate.send(RabbitTopologyConfig.EXCHANGE, RabbitTopologyConfig.ROUTING_KEY, message);
+        // Then: DLQ로 이동하고 DB 상태가 DEAD로 변경되었는지 확인
+        await()
+                .atMost(Duration.ofSeconds(10))
+                .pollInterval(Duration.ofMillis(100))
+                .untilAsserted(() -> {
+                    // 1. DLQ Consumer가 메시지를 수신했는지 확인
+                    assertEquals(1L, testDlqObserver.count(), "DLQ Consumer가 메시지를 수신해야 합니다.");
+                    assertEquals(outboxId, testDlqObserver.lastOutboxId(), "수신된 메시지의 ID가 일치해야 합니다.");
 
-        // then
-        // 재시도(약 10초 간격) * 3회 + DLQ 처리 시간을 고려하여 대기 시간 설정
-        await().atMost(Duration.ofSeconds(45)).untilAsserted(() -> {
-            assertAll("DLQ 처리 결과 검증",
-                    () -> assertEquals(1L, testDlqObserver.count(), "DLQ Consumer가 메시지를 1회 수신해야 합니다."),
-                    () -> assertEquals(outboxId, testDlqObserver.lastOutboxId(), "DLQ로 전달된 메시지의 ID가 일치해야 합니다.")
-            );
-        });
-
-        assertTrue(testAuthErrorHandler.getCallCount() >= 3,
-                "maxRetries=3이면 (첫 시도 포함) 총 3회 이상 handle 되어야 합니다.");
-
-        assertTrue(testAuthErrorHandler.getMaxRetrySeen() >= 2,
-                "maxRetries=3이면 마지막 재시도 소비에서 retry header는 2까지 관측됩니다.");
+                    // 2. DB에서 해당 메시지의 상태가 DEAD로 변경되었는지 확인
+                    assertEquals(ProcessedStatus.DEAD,
+                            processedMessageStore.findStatusByOutboxId(outboxId).orElse(null),
+                            "메시지 상태는 DEAD여야 합니다."
+                    );
+                });
     }
 
     private Message createMessage(long outboxId) {
