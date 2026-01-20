@@ -81,7 +81,6 @@ public class AuthErrorConsumer {
 
             channel.basicAck(tag, false);
         } catch (Exception e) {
-            log.error("error 발생");
             int currentRetrySafe;
             try {
                 currentRetrySafe = HeaderUtils.getRetryCount(message.getMessageProperties().getHeaders());
@@ -108,6 +107,9 @@ public class AuthErrorConsumer {
                     decision.nextRetryCount(),
                     decision.lastError()
             );
+
+            log.warn("[AuthErrorConsumer] RETRY -> outboxId={}, nextRetryCount={}, nextRetryAt={}, err={}",
+                    outboxId, decision.nextRetryCount(), decision.nextRetryAt(), decision.lastError());
 
             // 재발행(헤더 유지 + retry 갱신)
             republishToRetryExchange(payload, message, decision);

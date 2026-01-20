@@ -32,7 +32,7 @@ public interface ProcessedMessageJpaRepository extends JpaRepository<ProcessedMe
     /**
      *
      * 2) PENDING/RETRY_WAIT 이면서 lease 만료면 PROCESSING 선점
-     *    (지연은 Rabbit TTL이 보장하므로 next_retry_at으로 가드하지 않음)
+     *    (RabbitMQ TTL이 지연을 보장하지만, DB 수준에서도 next_retry_at을 확인하여 안정성을 높임)
      */
     @Transactional
     @Modifying
