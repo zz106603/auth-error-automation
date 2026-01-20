@@ -15,7 +15,10 @@ import java.time.OffsetDateTime;
 @Table(
         name = "processed_message",
         indexes = {
-            @Index(name = "idx_processed_message_processing_lease", columnList = "lease_until"),
+                @Index(
+                        name = "idx_processed_message_retry_ready",
+                        columnList = "status, next_retry_at"
+                )
         }
 )
 public class ProcessedMessage {
@@ -36,5 +39,17 @@ public class ProcessedMessage {
 
     @Column(name = "updated_at", nullable = false)
     private OffsetDateTime updatedAt;
+
+    @Column(name = "retry_count", nullable = false)
+    private int retryCount;
+
+    @Column(name = "next_retry_at")
+    private OffsetDateTime nextRetryAt;
+
+    @Column(name = "last_error", length = 500)
+    private String lastError;
+
+    @Column(name = "dead_at")
+    private OffsetDateTime deadAt;
 
 }
