@@ -35,7 +35,7 @@ public interface ProcessedMessageStore {
     int markDone(long outboxId, OffsetDateTime now);
 
     /**
-     * 성공 확정 (PROCESSING -> DONE)
+     * 재시도 대기 (PROCESSING -> RETRY_WAIT)
      */
     int markRetryWait(long outboxId, OffsetDateTime now, OffsetDateTime nextRetryAt, int nextRetryCount, String lastError);
 
