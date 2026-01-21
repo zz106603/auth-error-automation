@@ -1,5 +1,7 @@
 package com.yunhwan.auth.error.infra.messaging.rabbit;
 
+import com.yunhwan.auth.error.common.exception.NonRetryablePublishException;
+import com.yunhwan.auth.error.common.exception.RetryablePublishException;
 import com.yunhwan.auth.error.domain.outbox.OutboxMessage;
 import com.yunhwan.auth.error.usecase.outbox.port.OutboxPublisher;
 import lombok.RequiredArgsConstructor;
@@ -63,7 +65,7 @@ public class RabbitOutboxPublisher implements OutboxPublisher {
             if (!confirm.isAck()) {
                 log.warn("[RabbitOutboxPublisher] Broker NACK. id={}, reason={}",
                         message.getId(), confirm.getReason());
-                throw new IllegalStateException("Broker NACK. reason=" + confirm.getReason());
+                throw new RetryablePublishException("Broker NACK. reason=" + confirm.getReason(), null);
             }
 
             // 2) Routing 실패(Return) 검사
@@ -73,11 +75,7 @@ public class RabbitOutboxPublisher implements OutboxPublisher {
             if (returned != null) {
                 log.warn("[RabbitOutboxPublisher] Message RETURNED (Routing Failed). id={}, replyCode={}, replyText={}",
                         message.getId(), returned.getReplyCode(), returned.getReplyText());
-                throw new IllegalStateException(
-                        "Message returned by broker (Routing Failed). replyCode="
-                                + returned.getReplyCode()
-                                + ", replyText=" + returned.getReplyText()
-                );
+                throw new NonRetryablePublishException("Routing failed. replyCode=" + returned.getReplyCode());
             }
 
             // 성공 로그
@@ -85,7 +83,7 @@ public class RabbitOutboxPublisher implements OutboxPublisher {
 
         } catch (TimeoutException e) {
             log.error("[RabbitOutboxPublisher] Confirm timeout. id={}", message.getId());
-            throw new IllegalStateException("Confirm timeout", e);
+            throw new RetryablePublishException("Confirm timeout", e);
         } catch (Exception e) {
             // 그 외 예외 (InterruptedException 등)
             log.error("[RabbitOutboxPublisher] Publish ERROR. id={}, error={}", message.getId(), e.getMessage(), e);
