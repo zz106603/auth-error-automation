@@ -4,6 +4,7 @@ import com.yunhwan.auth.error.usecase.outbox.config.OutboxProperties;
 import com.yunhwan.auth.error.domain.outbox.OutboxMessage;
 import com.yunhwan.auth.error.usecase.outbox.OutboxPoller;
 import com.yunhwan.auth.error.usecase.outbox.OutboxProcessor;
+import com.yunhwan.auth.error.usecase.outbox.dto.OutboxClaimResult;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.annotation.Profile;
@@ -34,14 +35,16 @@ public class OutboxPollerScheduler implements SchedulingConfigurer {
     }
 
     void tick() {
-        List<OutboxMessage> claimed = outboxPoller.pollOnce(null);
+        OutboxClaimResult result = outboxPoller.pollOnce(null);
 
+        List<OutboxMessage> claimed = result.claimed();
         if (!claimed.isEmpty()) {
-            log.info("[outbox-poller] claimed {} messages. ids={}",
+            log.info("[outbox-poller] owner={} claimed {} messages. ids={}",
+                    result.owner(),
                     claimed.size(),
                     claimed.stream().map(OutboxMessage::getId).toList());
         }
 
-        processor.process(claimed);
+        processor.process(result.owner(), claimed);
     }
 }

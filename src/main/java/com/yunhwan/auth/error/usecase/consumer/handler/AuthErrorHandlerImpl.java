@@ -41,9 +41,6 @@ public class AuthErrorHandlerImpl implements AuthErrorHandler {
             return;
         }
 
-        // 처리 시작 마킹(옵션)
-        authError.markProcessing("consumer"); // owner는 host/pod id로 바꿔도 됨
-
         try {
             // ==========================
             // TODO: 여기부터 “실제 비즈니스 처리”

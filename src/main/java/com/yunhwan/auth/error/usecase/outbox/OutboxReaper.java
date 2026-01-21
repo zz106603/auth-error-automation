@@ -5,6 +5,7 @@ import com.yunhwan.auth.error.domain.outbox.decision.OutboxDecision;
 import com.yunhwan.auth.error.usecase.consumer.policy.RetryPolicy;
 import com.yunhwan.auth.error.usecase.outbox.config.OutboxProperties;
 import com.yunhwan.auth.error.usecase.outbox.port.OutboxMessageStore;
+import com.yunhwan.auth.error.usecase.outbox.port.OwnerResolver;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -29,6 +30,7 @@ public class OutboxReaper {
     private final OutboxProperties outboxProperties;
     private final RetryPolicy retryPolicy;
     private final Clock clock;
+    private final OwnerResolver ownerResolver;
 
     @Transactional
     public int reapOnce(String scopePrefixOrNull) {
@@ -36,19 +38,27 @@ public class OutboxReaper {
 
         int staleAfterSeconds = outboxProperties.getReaper().getStaleAfterSeconds();
         int batchSize = outboxProperties.getReaper().getBatchSize();
-
         OffsetDateTime staleBefore = now.minusSeconds(staleAfterSeconds);
+
+        String reaperOwner = ownerResolver.resolve();
 
         List<OutboxMessage> stale = outboxMessageStore.pickStaleProcessing(staleBefore, batchSize, scopePrefixOrNull);
         if (stale.isEmpty()) return 0;
 
         int affected = 0;
+
         for (OutboxMessage m : stale) {
+            // 1) takeover
+            int took = outboxMessageStore.takeoverStaleProcessing(m.getId(), reaperOwner, now, staleBefore);
+            if (took == 0) continue; // 누가 먼저 처리했거나 stale 아님
+
+            // 내 소유(owner)로 finalize 가능
             OutboxDecision decision = decide(m, now, staleAfterSeconds);
 
             if (decision.isDead()) {
                 affected += outboxMessageStore.markDead(
                         m.getId(),
+                        reaperOwner,
                         decision.nextRetryCount(),
                         decision.lastError(),
                         now
@@ -56,6 +66,7 @@ public class OutboxReaper {
             } else {
                 affected += outboxMessageStore.markForRetry(
                         m.getId(),
+                        reaperOwner,
                         decision.nextRetryCount(),
                         decision.nextRetryAt(),
                         decision.lastError(),
@@ -69,7 +80,7 @@ public class OutboxReaper {
 
     private OutboxDecision decide(OutboxMessage m, OffsetDateTime now, int staleAfterSeconds) {
         int nextRetryCount = retryPolicy.nextRetryCount(m.getRetryCount());
-        String lastError = "STALE_PROCESSING: reaped after " + staleAfterSeconds + "s";
+        String lastError = "STALE_REAP|staleAfter=" + staleAfterSeconds + "s";
 
         if (retryPolicy.shouldDead(nextRetryCount)) {
             return OutboxDecision.ofDead(nextRetryCount, lastError);
