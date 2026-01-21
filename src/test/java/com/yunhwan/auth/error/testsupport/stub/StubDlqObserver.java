@@ -4,11 +4,12 @@ import com.yunhwan.auth.error.usecase.consumer.port.DlqHandler;
 import org.springframework.context.annotation.Primary;
 import org.springframework.context.annotation.Profile;
 import org.springframework.stereotype.Component;
+import org.springframework.test.context.ActiveProfiles;
 
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
 
-@Profile("stub")
+@ActiveProfiles({"test", "stub"})
 @Component
 @Primary
 public class StubDlqObserver implements DlqHandler {

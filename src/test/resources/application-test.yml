@@ -46,6 +46,7 @@ spring:
 
 # === Outbox 테스트 튜닝 ===
 outbox:
+  owner: "test-owner"
   poller:
     batch-size: 10
     fixed-delay-ms: 200   # 빠르게 poll
