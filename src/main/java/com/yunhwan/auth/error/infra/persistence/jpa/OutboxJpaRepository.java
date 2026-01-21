@@ -100,8 +100,14 @@ public interface OutboxJpaRepository extends JpaRepository<OutboxMessage, Long> 
                updated_at = :now,
                published_at = :now
          where id = :id
+           and status = 'PROCESSING'
+           and processing_owner = :owner
         """, nativeQuery = true)
-    int markPublished(@Param("id") long id, @Param("now") OffsetDateTime now);
+    int markPublished(
+            @Param("id") long id,
+            @Param("owner") String owner,
+            @Param("now") OffsetDateTime now
+    );
 
     // === 재시도 ===
     @Modifying(clearAutomatically = true, flushAutomatically = true)
@@ -116,9 +122,12 @@ public interface OutboxJpaRepository extends JpaRepository<OutboxMessage, Long> 
                last_error = :lastError,
                updated_at = :now
          where id = :id
+           and status = 'PROCESSING'
+           and processing_owner = :owner
         """, nativeQuery = true)
     int markForRetry(
             @Param("id") long id,
+            @Param("owner") String owner,
             @Param("retryCount") int retryCount,
             @Param("nextRetryAt") OffsetDateTime nextRetryAt,
             @Param("lastError") String lastError,
@@ -138,9 +147,12 @@ public interface OutboxJpaRepository extends JpaRepository<OutboxMessage, Long> 
                last_error = :lastError,
                updated_at = :now
          where id = :id
+           and status = 'PROCESSING'
+           and processing_owner = :owner
         """, nativeQuery = true)
     int markDead(
             @Param("id") long id,
+            @Param("owner") String owner,
             @Param("retryCount") int retryCount,
             @Param("lastError") String lastError,
             @Param("now") OffsetDateTime now
@@ -161,5 +173,24 @@ public interface OutboxJpaRepository extends JpaRepository<OutboxMessage, Long> 
             @Param("staleBefore") OffsetDateTime staleBefore,
             @Param("batchSize") int batchSize,
             @Param("scopePrefix") String scopePrefix
+    );
+
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
+    @Transactional
+    @Query(value = """
+    update outbox_message
+       set processing_owner = :newOwner,
+           processing_started_at = :now,
+           updated_at = :now
+     where id = :id
+       and status = 'PROCESSING'
+       and processing_started_at is not null
+       and processing_started_at <= :staleBefore
+    """, nativeQuery = true)
+    int takeoverStaleProcessing(
+            @Param("id") long id,
+            @Param("newOwner") String newOwner,
+            @Param("now") OffsetDateTime now,
+            @Param("staleBefore") OffsetDateTime staleBefore
     );
 }

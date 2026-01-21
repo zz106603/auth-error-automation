@@ -62,22 +62,28 @@ public class OutboxMessageStoreAdapter implements OutboxMessageStore {
     }
 
     @Override
-    public int markPublished(long id, OffsetDateTime now) {
-        return repo.markPublished(id, now);
+    public int markPublished(long id, String owner, OffsetDateTime now) {
+
+        return repo.markPublished(id, owner, now);
     }
 
     @Override
-    public int markForRetry(long id, int retryCount, OffsetDateTime nextRetryAt, String lastError, OffsetDateTime now) {
-        return repo.markForRetry(id, retryCount, nextRetryAt, lastError, now);
+    public int markForRetry(long id, String owner, int retryCount, OffsetDateTime nextRetryAt, String lastError, OffsetDateTime now) {
+        return repo.markForRetry(id, owner, retryCount, nextRetryAt, lastError, now);
     }
 
     @Override
-    public int markDead(long id, int retryCount, String lastError, OffsetDateTime now) {
-        return repo.markDead(id, retryCount, lastError, now);
+    public int markDead(long id, String owner, int retryCount, String lastError, OffsetDateTime now) {
+        return repo.markDead(id, owner, retryCount, lastError, now);
     }
 
     @Override
     public List<OutboxMessage> pickStaleProcessing(OffsetDateTime staleBefore, int batchSize, String scopePrefix) {
         return repo.pickStaleProcessing(staleBefore, batchSize, scopePrefix);
+    }
+
+    @Override
+    public int takeoverStaleProcessing(long id, String newOwner, OffsetDateTime now, OffsetDateTime staleBefore) {
+        return repo.takeoverStaleProcessing(id, newOwner, now, staleBefore);
     }
 }

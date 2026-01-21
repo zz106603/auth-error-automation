@@ -38,11 +38,14 @@ public interface OutboxMessageStore {
 
     int setNextRetryAt(Long id, OffsetDateTime nextRetryAt, OffsetDateTime now);
 
-    int markPublished(long id, OffsetDateTime now);
+    int markPublished(long id, String owner, OffsetDateTime now);
 
-    int markForRetry(long id, int retryCount, OffsetDateTime nextRetryAt, String lastError, OffsetDateTime now);
+    int markForRetry(long id, String owner, int retryCount, OffsetDateTime nextRetryAt, String lastError, OffsetDateTime now);
 
-    int markDead(long id, int retryCount, String lastError, OffsetDateTime now);
+    int markDead(long id, String owner, int retryCount, String lastError, OffsetDateTime now);
 
     List<OutboxMessage> pickStaleProcessing(OffsetDateTime staleBefore, int batchSize, String scopePrefix);
+
+    int takeoverStaleProcessing(long id, String newOwner, OffsetDateTime now, OffsetDateTime staleBefore);
+
 }
