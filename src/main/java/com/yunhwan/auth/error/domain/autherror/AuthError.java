@@ -121,10 +121,6 @@ public class AuthError {
     private OffsetDateTime resolvedAt;
     @Column(name = "resolution_note")
     private String resolutionNote;
-    @Column(name = "processing_owner", length = 100)
-    private String processingOwner;
-    @Column(name = "processing_started_at")
-    private OffsetDateTime processingStartedAt;
 
     /* ===== 중복 방지 ===== */
     @Column(name = "dedup_key", length = 64)
@@ -166,12 +162,6 @@ public class AuthError {
                 /* ===== 기타 기본값 ===== */
                 .dedupKey(requestId) // 지금 구조 기준: requestId 기준 멱등
                 .build();
-    }
-
-    public void markProcessing(String owner) {
-        this.status = AuthErrorStatus.PROCESSING;
-        this.processingOwner = owner;
-        this.processingStartedAt = OffsetDateTime.now();
     }
 
     public void markProcessed() {
