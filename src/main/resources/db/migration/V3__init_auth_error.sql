@@ -2,75 +2,71 @@
 -- PostgreSQL
 
 create table if not exists auth_error (
-                                          id                  bigserial primary key,
+    id                  bigserial primary key,
 
     -- ===== 식별/추적 =====
-                                          request_id           varchar(100),                 -- 외부 요청/업무 단위 ID (있으면 강력)
-                                          correlation_id       varchar(100),                 -- 시스템 전반 상관관계 ID
-                                          trace_id             varchar(64),                  -- distributed tracing (W3C traceparent 등)
-                                          span_id              varchar(16),
+    request_id           varchar(100),                 -- 외부 요청/업무 단위 ID (있으면 강력)
+    correlation_id       varchar(100),                 -- 시스템 전반 상관관계 ID
+    trace_id             varchar(64),                  -- distributed tracing (W3C traceparent 등)
+    span_id              varchar(16),
 
     -- ===== 발생 시점/출처 =====
-                                          occurred_at          timestamptz not null default now(),
-                                          received_at          timestamptz not null default now(), -- 우리 시스템이 수집/저장한 시간
-                                          source_service       varchar(100) not null,             -- e.g. auth-api, gateway
-                                          source_instance      varchar(100),                      -- host/pod id
-                                          environment          varchar(20) not null default 'prod', -- dev/stage/prod 등
+    occurred_at          timestamptz not null default now(),
+    received_at          timestamptz not null default now(), -- 우리 시스템이 수집/저장한 시간
+    source_service       varchar(100) not null,             -- e.g. auth-api, gateway
+    source_instance      varchar(100),                      -- host/pod id
+    environment          varchar(20) not null default 'prod', -- dev/stage/prod 등
 
     -- ===== 요청 컨텍스트 (운영 조회 핵심) =====
-                                          http_method          varchar(10),
-                                          request_uri          text,
-                                          client_ip            varchar(50),
-                                          user_agent           text,
+    http_method          varchar(10),
+    request_uri          text,
+    client_ip            varchar(50),
+    user_agent           text,
 
     -- 사용자/세션(PII는 최소화 권장)
-                                          user_id              varchar(100),
-                                          session_id           varchar(200),
+    user_id              varchar(100),
+    session_id           varchar(200),
 
     -- ===== 에러 분류(검색/대시보드용) =====
-                                          error_domain         varchar(50) not null default 'AUTH',   -- AUTH, SECURITY, SYSTEM 등
-                                          error_code           varchar(100),                          -- 사내 표준 코드 (권장)
-                                          severity             varchar(10) not null default 'ERROR',  -- INFO/WARN/ERROR/CRITICAL
-                                          category             varchar(50),                           -- INVALID_TOKEN, EXPIRED, FORBIDDEN ...
+    error_domain         varchar(50) not null default 'AUTH',   -- AUTH, SECURITY, SYSTEM 등
+    error_code           varchar(100),                          -- 사내 표준 코드 (권장)
+    severity             varchar(10) not null default 'ERROR',  -- INFO/WARN/ERROR/CRITICAL
+    category             varchar(50),                           -- INVALID_TOKEN, EXPIRED, FORBIDDEN ...
 
     -- ===== 예외/원인(디버깅) =====
-                                          exception_class      varchar(200),
-                                          exception_message    text,
-                                          root_cause_class     varchar(200),
-                                          root_cause_message   text,
+    exception_class      varchar(200),
+    exception_message    text,
+    root_cause_class     varchar(200),
+    root_cause_message   text,
 
     -- stacktrace는 크고 민감할 수 있어서 보관 정책 필요
-                                          stacktrace           text,
+    stacktrace           text,
 
     -- ===== 원본 데이터(유연성/재현) =====
-                                          request_headers      jsonb,      -- 필요시 일부만(민감 헤더 제거)
-                                          request_body         jsonb,      -- 가능하면 마스킹/부분 저장
-                                          extra_context        jsonb,      -- securityContext, claims, internal vars 등
-                                          tags                 jsonb,      -- ["jwt","gateway","timeout"] 같은 태그
+    request_headers      jsonb,      -- 필요시 일부만(민감 헤더 제거)
+    request_body         jsonb,      -- 가능하면 마스킹/부분 저장
+    extra_context        jsonb,      -- securityContext, claims, internal vars 등
+    tags                 jsonb,      -- ["jwt","gateway","timeout"] 같은 태그
 
     -- ===== 처리 상태(재처리/워크플로우) =====
-                                          status               varchar(20) not null default 'NEW',
-                                          retry_count          int not null default 0,
-                                          next_retry_at        timestamptz,
-                                          last_processed_at    timestamptz,
-                                          resolved_at          timestamptz,
-                                          resolution_note      text,
-
-    -- 분산 처리 락(컨슈머/배치가 auth_error를 직접 처리한다면 유용)
-                                          processing_owner     varchar(100),
-                                          processing_started_at timestamptz,
+    status               varchar(20) not null default 'NEW',
+    retry_count          int not null default 0,
+    next_retry_at        timestamptz,
+    last_processed_at    timestamptz,
+    resolved_at          timestamptz,
+    resolution_note      text,
 
     -- ===== 중복 방지/집계키 =====
-                                          dedup_key            varchar(64),     -- sha256 같은 해시 문자열 권장
+    dedup_key            varchar(64),     -- sha256 같은 해시 문자열 권장
 
-                                          created_at           timestamptz not null default now(),
-                                          updated_at           timestamptz not null default now()
+    created_at           timestamptz not null default now(),
+    updated_at           timestamptz not null default now()
 );
 
 -- status 값 제한(ENUM 대신 체크 제약)
 alter table auth_error
     add constraint ck_auth_error_status
-        check (status in ('NEW','PROCESSING','RETRY','PROCESSED','FAILED','RESOLVED','IGNORED'));
+        check (status in ('NEW','RETRY','PROCESSED','FAILED','RESOLVED','IGNORED'));
 
 -- 중복 방지
 create unique index if not exists ux_auth_error_dedup_key
@@ -83,7 +79,7 @@ create index if not exists ix_auth_error_occurred_at
 
 create index if not exists ix_auth_error_status_next_retry
     on auth_error(status, next_retry_at)
-    where status in ('NEW','RETRY','PROCESSING');
+    where status in ('NEW','RETRY');
 
 create index if not exists ix_auth_error_request_id
     on auth_error(request_id)

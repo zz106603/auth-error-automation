@@ -2,7 +2,6 @@ package com.yunhwan.auth.error.domain.autherror;
 
 public enum AuthErrorStatus {
     NEW(false),
-    PROCESSING(false),
     RETRY(false),
     PROCESSED(true),
     FAILED(false),
