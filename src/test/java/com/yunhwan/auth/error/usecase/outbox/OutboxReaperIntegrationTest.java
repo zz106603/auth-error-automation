@@ -4,6 +4,7 @@ import com.yunhwan.auth.error.domain.outbox.OutboxMessage;
 import com.yunhwan.auth.error.domain.outbox.OutboxStatus;
 import com.yunhwan.auth.error.testsupport.base.AbstractStubIntegrationTest;
 import com.yunhwan.auth.error.testsupport.fixtures.OutboxFixtures;
+import com.yunhwan.auth.error.usecase.outbox.dto.OutboxClaimResult;
 import com.yunhwan.auth.error.usecase.outbox.port.OutboxMessageStore;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -47,7 +48,8 @@ class OutboxReaperIntegrationTest extends AbstractStubIntegrationTest {
         OutboxMessage m = fixtures.createAuthErrorMessage(scope, "REQ-STUCK" + UUID.randomUUID(), "{\"val\":\"x\"}");
 
         // poller가 claim해서 PROCESSING 상태로 만든다
-        List<OutboxMessage> claimed = poller.pollOnce(scope);
+        OutboxClaimResult result = poller.pollOnce(scope);
+        List<OutboxMessage> claimed = result.claimed();
         assertThat(claimed).extracting(OutboxMessage::getId).containsExactly(m.getId());
 
         OutboxMessage processing = outboxMessageStore.findById(m.getId()).orElseThrow();
@@ -71,7 +73,7 @@ class OutboxReaperIntegrationTest extends AbstractStubIntegrationTest {
         assertThat(after.getRetryCount()).isEqualTo(1);
         assertThat(after.getNextRetryAt()).isNotNull();
         assertThat(after.getNextRetryAt()).isAfter(OffsetDateTime.now(clock));
-        assertThat(after.getLastError()).contains("STALE_PROCESSING");
+        assertThat(after.getLastError()).contains("STALE_REAP");
 
         // PROCESSING 필드 정리됐는지 확인
         assertThat(after.getProcessingOwner()).isNull();

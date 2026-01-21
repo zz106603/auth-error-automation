@@ -5,6 +5,7 @@ import com.yunhwan.auth.error.domain.outbox.OutboxStatus;
 import com.yunhwan.auth.error.testsupport.stub.StubOutboxPublisher;
 import com.yunhwan.auth.error.testsupport.base.AbstractStubIntegrationTest;
 import com.yunhwan.auth.error.testsupport.fixtures.OutboxFixtures;
+import com.yunhwan.auth.error.usecase.outbox.dto.OutboxClaimResult;
 import com.yunhwan.auth.error.usecase.outbox.port.OutboxMessageStore;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -53,7 +54,8 @@ class OutboxReaperEndToEndIntegrationTest extends AbstractStubIntegrationTest {
         OutboxMessage m = fixtures.createAuthErrorMessage(scope, "REQ-E2E" + UUID.randomUUID(), "{\"val\":\"e2e\"}");
 
         // 1) poller가 claim해서 PROCESSING으로 만든다
-        List<OutboxMessage> claimed1 = poller.pollOnce(scope);
+        OutboxClaimResult result = poller.pollOnce(scope);
+        List<OutboxMessage> claimed1 = result.claimed();
         assertThat(claimed1).extracting(OutboxMessage::getId).containsExactly(m.getId());
 
         OutboxMessage processing = outboxMessageStore.findById(m.getId()).orElseThrow();
@@ -74,7 +76,7 @@ class OutboxReaperEndToEndIntegrationTest extends AbstractStubIntegrationTest {
         assertThat(afterReap.getStatus()).isEqualTo(OutboxStatus.PENDING);
         assertThat(afterReap.getRetryCount()).isEqualTo(1);
         assertThat(afterReap.getNextRetryAt()).isNotNull();
-        assertThat(afterReap.getLastError()).contains("STALE_PROCESSING");
+        assertThat(afterReap.getLastError()).contains("STALE_REAP");
 
         // 4) "재시도 시간이 지났다"를 만들기 위해 next_retry_at을 과거로 강제
         outboxMessageStore.setNextRetryAt(m.getId(), OffsetDateTime.now(clock).minusSeconds(1), OffsetDateTime.now(clock));
@@ -83,10 +85,11 @@ class OutboxReaperEndToEndIntegrationTest extends AbstractStubIntegrationTest {
         testPublisher.failNext(false);
 
         // when: 다시 poll 해서 claim -> processor 처리
-        List<OutboxMessage> claimed2 = poller.pollOnce(scope);
+        OutboxClaimResult result2 = poller.pollOnce(scope);
+        List<OutboxMessage> claimed2 = result2.claimed();
         assertThat(claimed2).extracting(OutboxMessage::getId).containsExactly(m.getId());
 
-        processor.process(claimed2);
+        processor.process(result2.owner(), claimed2);
 
         // then: 최종 PUBLISHED + 필드 정리
         OutboxMessage published = outboxMessageStore.findById(m.getId()).orElseThrow();

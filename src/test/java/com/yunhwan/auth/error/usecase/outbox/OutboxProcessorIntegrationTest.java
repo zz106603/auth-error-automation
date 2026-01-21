@@ -5,6 +5,7 @@ import com.yunhwan.auth.error.domain.outbox.OutboxStatus;
 import com.yunhwan.auth.error.testsupport.stub.StubOutboxPublisher;
 import com.yunhwan.auth.error.testsupport.base.AbstractStubIntegrationTest;
 import com.yunhwan.auth.error.testsupport.fixtures.OutboxFixtures;
+import com.yunhwan.auth.error.usecase.outbox.dto.OutboxClaimResult;
 import com.yunhwan.auth.error.usecase.outbox.port.OutboxMessageStore;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -50,8 +51,9 @@ class OutboxProcessorIntegrationTest extends AbstractStubIntegrationTest {
         testPublisher.failNext(false);
 
         // when: 폴링 후 프로세싱
-        List<OutboxMessage> claimed = poller.pollOnce(scope);
-        processor.process(claimed);
+        OutboxClaimResult result = poller.pollOnce(scope);
+        List<OutboxMessage> claimed = result.claimed();
+        processor.process(result.owner(), claimed);
 
         // then
         Optional<OutboxMessage> reloaded = outboxMessageStore.findById(m.getId());
@@ -76,8 +78,9 @@ class OutboxProcessorIntegrationTest extends AbstractStubIntegrationTest {
         testPublisher.failNext(true);
 
         // when
-        List<OutboxMessage> claimed = poller.pollOnce(scope);
-        processor.process(claimed);
+        OutboxClaimResult result = poller.pollOnce(scope);
+        List<OutboxMessage> claimed = result.claimed();
+        processor.process(result.owner(), claimed);
 
         // then
         Optional<OutboxMessage> reloaded = outboxMessageStore.findById(m.getId());

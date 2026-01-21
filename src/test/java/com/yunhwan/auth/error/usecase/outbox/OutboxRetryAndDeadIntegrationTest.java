@@ -6,6 +6,7 @@ import com.yunhwan.auth.error.usecase.outbox.config.OutboxProperties;
 import com.yunhwan.auth.error.testsupport.stub.StubOutboxPublisher;
 import com.yunhwan.auth.error.testsupport.base.AbstractStubIntegrationTest;
 import com.yunhwan.auth.error.testsupport.fixtures.OutboxFixtures;
+import com.yunhwan.auth.error.usecase.outbox.dto.OutboxClaimResult;
 import com.yunhwan.auth.error.usecase.outbox.port.OutboxMessageStore;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -56,10 +57,11 @@ class OutboxRetryAndDeadIntegrationTest extends AbstractStubIntegrationTest {
         testPublisher.failNext(true);
 
         // when: 1차 poll -> 처리(실패) -> PENDING + next_retry_at(미래)
-        List<OutboxMessage> claimed1 = poller.pollOnce(scope);
+        OutboxClaimResult result = poller.pollOnce(scope);
+        List<OutboxMessage> claimed1 = result.claimed();
         assertThat(claimed1).extracting(OutboxMessage::getId).containsExactly(m.getId());
 
-        processor.process(claimed1);
+        processor.process(result.owner(), claimed1);
 
         // then: DB에 next_retry_at 미래로 설정되어 있어야 함
         OutboxMessage afterFail = outboxMessageStore.findById(m.getId()).orElseThrow();
@@ -69,7 +71,8 @@ class OutboxRetryAndDeadIntegrationTest extends AbstractStubIntegrationTest {
         assertThat(afterFail.getNextRetryAt()).isAfter(OffsetDateTime.now(clock));
 
         // when: 즉시 다시 poll -> next_retry_at 때문에 claim 0건이어야 함
-        List<OutboxMessage> claimed2 = poller.pollOnce(scope);
+        OutboxClaimResult result2 = poller.pollOnce(scope);
+        List<OutboxMessage> claimed2 = result2.claimed();
         assertThat(claimed2).isEmpty();
 
         // when: 시간을 "지났다고 가정"하기 위해 next_retry_at을 과거로 강제
@@ -79,10 +82,11 @@ class OutboxRetryAndDeadIntegrationTest extends AbstractStubIntegrationTest {
         testPublisher.failNext(false);
 
         // then: 다시 poll하면 claim 된다
-        List<OutboxMessage> claimed3 = poller.pollOnce(scope);
+        OutboxClaimResult result3 = poller.pollOnce(scope);
+        List<OutboxMessage> claimed3 = result3.claimed();
         assertThat(claimed3).extracting(OutboxMessage::getId).containsExactly(m.getId());
 
-        processor.process(claimed3);
+        processor.process(result3.owner(), claimed3);
 
         OutboxMessage published = outboxMessageStore.findById(m.getId()).orElseThrow();
         assertThat(published.getStatus()).isEqualTo(OutboxStatus.PUBLISHED);
@@ -115,10 +119,11 @@ class OutboxRetryAndDeadIntegrationTest extends AbstractStubIntegrationTest {
         testPublisher.failNext(true);
 
         // when
-        List<OutboxMessage> claimed = poller.pollOnce(scope);
+        OutboxClaimResult result = poller.pollOnce(scope);
+        List<OutboxMessage> claimed = result.claimed();
         assertThat(claimed).extracting(OutboxMessage::getId).containsExactly(m.getId());
 
-        processor.process(claimed);
+        processor.process(result.owner(), claimed);
 
         // then
         OutboxMessage reloaded = outboxMessageStore.findById(m.getId()).orElseThrow();

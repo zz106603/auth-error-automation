@@ -4,6 +4,7 @@ import com.yunhwan.auth.error.domain.outbox.OutboxMessage;
 import com.yunhwan.auth.error.domain.outbox.OutboxStatus;
 import com.yunhwan.auth.error.testsupport.base.AbstractStubIntegrationTest;
 import com.yunhwan.auth.error.testsupport.fixtures.OutboxFixtures;
+import com.yunhwan.auth.error.usecase.outbox.dto.OutboxClaimResult;
 import com.yunhwan.auth.error.usecase.outbox.port.OutboxMessageStore;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -21,7 +22,7 @@ class OutboxSuccessIntegrationTest extends AbstractStubIntegrationTest {
     @Autowired
     OutboxMessageStore outboxMessageStore;
     @Autowired
-    OutboxPoller outboxPoller;
+    OutboxPoller poller;
     @Autowired
     Clock clock;
     @Autowired
@@ -44,10 +45,11 @@ class OutboxSuccessIntegrationTest extends AbstractStubIntegrationTest {
         OutboxMessage saved = fixtures.createAuthErrorMessage(scope, "REQ-1" + UUID.randomUUID(), "{ \"error\": \"AUTH_FAILED\" }");
 
         // when: 폴링 및 처리
-        List<OutboxMessage> claimed = outboxPoller.pollOnce(scope);
+        OutboxClaimResult result = poller.pollOnce(scope);
+        List<OutboxMessage> claimed = result.claimed();
         assertThat(claimed).hasSize(1);
 
-        outboxProcessor.process(claimed);
+        outboxProcessor.process(result.owner(), claimed);
 
         // then: 최종 상태 검증
         OutboxMessage after = outboxMessageStore.findById(saved.getId()).orElseThrow();

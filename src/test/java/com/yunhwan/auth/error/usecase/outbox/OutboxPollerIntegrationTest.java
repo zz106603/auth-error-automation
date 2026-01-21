@@ -4,6 +4,7 @@ import com.yunhwan.auth.error.domain.outbox.OutboxMessage;
 import com.yunhwan.auth.error.domain.outbox.OutboxStatus;
 import com.yunhwan.auth.error.testsupport.base.AbstractStubIntegrationTest;
 import com.yunhwan.auth.error.testsupport.fixtures.OutboxFixtures;
+import com.yunhwan.auth.error.usecase.outbox.dto.OutboxClaimResult;
 import com.yunhwan.auth.error.usecase.outbox.port.OutboxMessageStore;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -18,6 +19,7 @@ import java.util.List;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.*;
+import java.util.stream.Collectors;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -49,11 +51,12 @@ class OutboxPollerIntegrationTest extends AbstractStubIntegrationTest {
         OutboxMessage inserted = fixtures.createAuthErrorMessage(scope, "REQ-1" + UUID.randomUUID(), "{\"reason\":\"token expired\"}");
 
         // when
-        List<OutboxMessage> claimed = outboxPoller.pollOnce(scope);
+        OutboxClaimResult result = outboxPoller.pollOnce(scope);
+        var claimed = result.claimed();
 
         // then
         assertThat(claimed).hasSize(1);
-        OutboxMessage m = claimed.get(0);
+        OutboxMessage m = claimed.getFirst();
 
         assertThat(m.getId()).isEqualTo(inserted.getId());
         assertThat(m.getStatus()).isEqualTo(OutboxStatus.PROCESSING);
@@ -85,11 +88,12 @@ class OutboxPollerIntegrationTest extends AbstractStubIntegrationTest {
         tx.executeWithoutResult(status -> outboxMessageStore.setNextRetryAt(m2.getId(), future, OffsetDateTime.now(clock)));
 
         // when
-        List<OutboxMessage> claimed = outboxPoller.pollOnce(scope);
+        OutboxClaimResult result = outboxPoller.pollOnce(scope);
+        var claimed = result.claimed();
 
         // then: REQ-1만 잡혀야 함
         assertThat(claimed).hasSize(1);
-        assertThat(claimed.get(0).getId()).isEqualTo(m1.getId());
+        assertThat(claimed.getFirst().getId()).isEqualTo(m1.getId());
 
         OutboxMessage reloaded1 = outboxMessageStore.findById(m1.getId()).orElseThrow();
         OutboxMessage reloaded2 = outboxMessageStore.findById(m2.getId()).orElseThrow();
@@ -121,7 +125,9 @@ class OutboxPollerIntegrationTest extends AbstractStubIntegrationTest {
         Callable<List<Long>> task = () -> {
             ready.countDown(); // 준비 완료 신호
             start.await(3, TimeUnit.SECONDS); // 시작 신호 대기
-            return outboxPoller.pollOnce(scope).stream().map(OutboxMessage::getId).toList();
+
+            OutboxClaimResult result = outboxPoller.pollOnce(scope);   // ✅ 변경
+            return result.claimed().stream().map(OutboxMessage::getId).toList();
         };
 
         Future<List<Long>> f1 = es.submit(task);
@@ -149,11 +155,22 @@ class OutboxPollerIntegrationTest extends AbstractStubIntegrationTest {
         union.addAll(s1);
         union.addAll(s2);
 
-        assertThat(union.size()).isGreaterThan(0);
+        assertThat(union).hasSizeGreaterThan(0);
 
         // 가져간 메시지들은 DB에서 모두 PROCESSING 상태여야 함
         List<OutboxMessage> claimedRows = outboxMessageStore.findAllById(union);
-        assertThat(claimedRows).allSatisfy(m -> assertThat(m.getStatus()).isEqualTo(OutboxStatus.PROCESSING));
+        assertThat(claimedRows).allSatisfy(m -> {
+            assertThat(m.getStatus()).isEqualTo(OutboxStatus.PROCESSING);
+            assertThat(m.getProcessingOwner()).isNotNull();
+        });
+
+        // 동시에 점유한 owner는 최대 2개여야 함
+        Set<String> owners = claimedRows.stream()
+                .map(OutboxMessage::getProcessingOwner)
+                .collect(Collectors.toSet());
+
+        assertThat(owners)
+                .hasSizeLessThanOrEqualTo(2);
     }
 
     /**
@@ -169,11 +186,13 @@ class OutboxPollerIntegrationTest extends AbstractStubIntegrationTest {
         OutboxMessage inserted = fixtures.createAuthErrorMessage(scope, "REQ-1" + UUID.randomUUID(), "{\"a\":1}");
 
         // first claim: 첫 번째 폴링으로 상태를 PROCESSING으로 변경
-        List<OutboxMessage> first = outboxPoller.pollOnce(scope);
+        OutboxClaimResult result1 = outboxPoller.pollOnce(scope);
+        List<OutboxMessage> first = result1.claimed();
         assertThat(first).hasSize(1);
 
         // when: second claim (다시 폴링 시도)
-        List<OutboxMessage> second = outboxPoller.pollOnce(scope);
+        OutboxClaimResult result2 = outboxPoller.pollOnce(scope);
+        List<OutboxMessage> second = result2.claimed();
 
         // then: 이미 처리 중이므로 가져오지 않아야 함
         assertThat(second).isEmpty();
