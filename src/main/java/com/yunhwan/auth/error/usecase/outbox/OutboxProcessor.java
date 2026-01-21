@@ -72,15 +72,15 @@ public class OutboxProcessor {
     }
 
     private OutboxDecision decideFailure(OutboxMessage m, Exception e, OffsetDateTime now) {
+        String err = truncate(e.getClass().getSimpleName() + ": " + safeMsg(e),1000);
+
         // 재시도 불가 → 즉시 DEAD
         if (e instanceof NonRetryablePublishException) {
-            String err = truncate(e.getClass().getSimpleName() + ": " + safeMsg(e),1000);
             return OutboxDecision.ofDead(m.getRetryCount(), err);
         }
 
         // 재시도 가능한 실패만 retry 정책 적용
         int nextRetryCount = retryPolicy.nextRetryCount(m.getRetryCount());
-        String err = truncate(e.getClass().getSimpleName() + ": " + safeMsg(e),1000);
 
         if (retryPolicy.shouldDead(nextRetryCount)) {
             return OutboxDecision.ofDead(nextRetryCount, err);
