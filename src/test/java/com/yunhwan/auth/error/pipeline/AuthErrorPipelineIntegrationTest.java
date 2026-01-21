@@ -11,6 +11,7 @@ import com.yunhwan.auth.error.usecase.autherror.port.AuthErrorStore;
 import com.yunhwan.auth.error.usecase.consumer.port.ProcessedMessageStore;
 import com.yunhwan.auth.error.usecase.outbox.OutboxPoller;
 import com.yunhwan.auth.error.usecase.outbox.OutboxProcessor;
+import com.yunhwan.auth.error.usecase.outbox.dto.OutboxClaimResult;
 import com.yunhwan.auth.error.usecase.outbox.port.OutboxMessageStore;
 import org.awaitility.Awaitility;
 import org.junit.jupiter.api.DisplayName;
@@ -19,7 +20,6 @@ import org.springframework.beans.factory.annotation.Autowired;
 
 import java.time.Duration;
 import java.time.OffsetDateTime;
-import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -52,14 +52,15 @@ class AuthErrorPipelineIntegrationTest extends AbstractIntegrationTest {
     @DisplayName("파이프라인 통합 테스트: 정상 처리 시 AuthError 상태가 PROCESSED로 변경되어야 한다")
     void 파이프라인_정상_처리_및_상태_전이_확인() {
         // Given: AuthError 기록 (초기 상태 PENDING)
-        var result = authErrorWriter.record("REQ-IT-1", OffsetDateTime.now());
+        var res = authErrorWriter.record("REQ-IT-1", OffsetDateTime.now());
 
         // When: Outbox Polling 및 Publishing 수행
-        List<OutboxMessage> claimed = outboxPoller.pollOnce(null);
+        OutboxClaimResult result = outboxPoller.pollOnce(null);
+        var claimed = result.claimed();
         assertThat(claimed).hasSize(1);
-
         long outboxId = claimed.getFirst().getId();
-        outboxProcessor.process(claimed);
+
+        outboxProcessor.process(result.owner(), claimed);
 
         // Then: Consumer 처리가 완료될 때까지 기다리며 전체 상태 검증
         Awaitility.await()
@@ -67,7 +68,7 @@ class AuthErrorPipelineIntegrationTest extends AbstractIntegrationTest {
             .pollInterval(Duration.ofMillis(200))
             .untilAsserted(() -> {
                 // 1. AuthError 상태가 PROCESSED로 변경되었는지 확인
-                AuthError reloaded = authErrorStore.findById(result.authErrorId()).orElseThrow();
+                AuthError reloaded = authErrorStore.findById(res.authErrorId()).orElseThrow();
                 assertThat(reloaded.getStatus())
                         .withFailMessage("AuthError 상태는 PROCESSED여야 합니다.")
                         .isEqualTo(AuthErrorStatus.PROCESSED);
