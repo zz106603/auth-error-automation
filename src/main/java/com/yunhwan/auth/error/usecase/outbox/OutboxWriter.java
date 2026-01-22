@@ -1,6 +1,8 @@
 package com.yunhwan.auth.error.usecase.outbox;
 
 import com.yunhwan.auth.error.domain.outbox.OutboxMessage;
+import com.yunhwan.auth.error.domain.outbox.descriptor.OutboxEventDescriptor;
+import com.yunhwan.auth.error.domain.outbox.policy.PayloadSerializer;
 import com.yunhwan.auth.error.usecase.outbox.dto.OutboxEnqueueCommand;
 import com.yunhwan.auth.error.usecase.outbox.port.OutboxMessageStore;
 import lombok.RequiredArgsConstructor;
@@ -16,6 +18,7 @@ import java.time.OffsetDateTime;
 public class OutboxWriter {
 
     private final OutboxMessageStore outboxMessageStore;
+    private final PayloadSerializer payloadSerializer;
     private final Clock clock;
 
     /**
@@ -26,7 +29,17 @@ public class OutboxWriter {
      * - ON CONFLICT ... RETURNING
      */
     @Transactional
-    public OutboxMessage enqueue(OutboxEnqueueCommand cmd) {
+    public <T> OutboxMessage enqueue(OutboxEventDescriptor<T> descriptor, String aggregateId, T payload) {
+        return enqueueInternal(new OutboxEnqueueCommand(
+                descriptor.aggregateType(),
+                aggregateId,
+                descriptor.eventType(),
+                payloadSerializer.serialize(payload),
+                descriptor.idempotencyKey(payload)
+        ));
+    }
+
+    private OutboxMessage enqueueInternal(OutboxEnqueueCommand cmd) {
         return outboxMessageStore.upsertReturning(
                 cmd.aggregateType(),
                 cmd.aggregateId(),
@@ -36,5 +49,7 @@ public class OutboxWriter {
                 OffsetDateTime.now(clock)
         );
     }
+
+
 
 }
