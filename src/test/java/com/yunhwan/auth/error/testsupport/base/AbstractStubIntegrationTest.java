@@ -14,8 +14,8 @@ import java.util.UUID;
 @SpringBootTest
 @Import({
         TestcontainersConfig.class,
-        RabbitTopologyConfig.class,
-        TestFailInjectionConfig.class})
+        RabbitTopologyConfig.class
+})
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
 public abstract class AbstractStubIntegrationTest {
 
