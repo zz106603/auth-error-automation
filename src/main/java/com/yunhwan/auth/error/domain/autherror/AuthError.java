@@ -167,22 +167,29 @@ public class AuthError {
     public void markProcessed() {
         this.status = AuthErrorStatus.PROCESSED;
         this.lastProcessedAt = OffsetDateTime.now();
+        this.nextRetryAt = null;
     }
 
-    public void markRetry(OffsetDateTime nextRetryAt) {
+    public void markRetry() {
         this.status = AuthErrorStatus.RETRY;
         this.retryCount += 1;
-        this.nextRetryAt = nextRetryAt;
+        this.nextRetryAt = null;
     }
 
     public void markFailed(String reason) {
         this.status = AuthErrorStatus.FAILED;
         this.resolutionNote = reason;
+        this.nextRetryAt = null;
+    }
+
+    public void markAnalysisRequested() {
+        this.status = AuthErrorStatus.ANALYSIS_REQUESTED;
     }
 
     public void resolve(String note) {
         this.status = AuthErrorStatus.RESOLVED;
         this.resolutionNote = note;
         this.resolvedAt = OffsetDateTime.now();
+        this.nextRetryAt = null;
     }
 }
