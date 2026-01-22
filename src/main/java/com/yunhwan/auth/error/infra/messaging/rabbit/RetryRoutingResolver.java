@@ -22,17 +22,29 @@ public class RetryRoutingResolver {
         this.props = props;
     }
 
-    public String resolve(int nextRetryCount) {
-        if (nextRetryCount <= 0) {
-            // 방어: 0 이하가 들어오면 첫 retry로 취급
-            nextRetryCount = 1;
+    public String resolve(String eventType, int nextRetryCount) {
+        if (nextRetryCount <= 0) nextRetryCount = 1;
+
+        boolean fast = nextRetryCount <= props.getFastMax();
+        boolean medium = nextRetryCount <= props.getMediumMax();
+
+        boolean analysis = RabbitTopologyConfig.RK_ANALYSIS_REQUESTED.equals(eventType);
+
+        if (analysis) {
+            if (fast) return RabbitTopologyConfig.RETRY_RK_ANALYSIS_10S;
+            if (medium) return RabbitTopologyConfig.RETRY_RK_ANALYSIS_1M;
+            return RabbitTopologyConfig.RETRY_RK_ANALYSIS_10M;
         }
-        if (nextRetryCount <= props.getFastMax()) {
-            return RabbitTopologyConfig.RETRY_RK_10S;
+
+        if (fast) return RabbitTopologyConfig.RETRY_RK_RECORDED_10S;
+        if (medium) return RabbitTopologyConfig.RETRY_RK_RECORDED_1M;
+        return RabbitTopologyConfig.RETRY_RK_RECORDED_10M;
+    }
+
+    public String retryExchange(String eventType) {
+        if (RabbitTopologyConfig.RK_ANALYSIS_REQUESTED.equals(eventType)) {
+            return RabbitTopologyConfig.RETRY_EXCHANGE_ANALYSIS;
         }
-        if (nextRetryCount <= props.getMediumMax()) {
-            return RabbitTopologyConfig.RETRY_RK_1M;
-        }
-        return RabbitTopologyConfig.RETRY_RK_10M;
+        return RabbitTopologyConfig.RETRY_EXCHANGE_RECORDED;
     }
 }
