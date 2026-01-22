@@ -40,9 +40,11 @@ public class RabbitOutboxPublisher implements OutboxPublisher {
         CorrelationData cd = new CorrelationData("outbox-" + message.getId());
         CompletableFuture<CorrelationData.Confirm> confirmFuture = cd.getFuture();
 
+        String routingKey = message.getEventType(); // e.g. RK_RECORDED / RK_ANALYSIS_REQUESTED
+
         rabbitTemplate.convertAndSend(
                 RabbitTopologyConfig.EXCHANGE,
-                RabbitTopologyConfig.ROUTING_KEY,
+                routingKey,
                 message.getPayload(),
                 msg -> {
                     MessageProperties props = msg.getMessageProperties();
