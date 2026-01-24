@@ -134,6 +134,14 @@ public class AuthError {
     @Column(name = "updated_at", nullable = false)
     private OffsetDateTime updatedAt;
 
+    /* ===== HTTP 응답 ===== */
+    @Column(name = "http_status")
+    private Integer httpStatus;
+
+    /* ===== 스택 그룹핑 ===== */
+    @Column(name = "stack_hash", length = 64)
+    private String stackHash;
+
     /* ===== 도메인 행위 ===== */
 
     public static AuthError record(
@@ -162,6 +170,39 @@ public class AuthError {
                 /* ===== 기타 기본값 ===== */
                 .dedupKey(requestId) // 지금 구조 기준: requestId 기준 멱등
                 .build();
+    }
+
+    public void applyRequestContext(
+            String httpMethod,
+            String requestUri,
+            String clientIp,
+            String userAgent,
+            String userId,
+            String sessionId
+    ) {
+        this.httpMethod = httpMethod;
+        this.requestUri = requestUri;
+        this.clientIp = clientIp;
+        this.userAgent = userAgent;
+        this.userId = userId;
+        this.sessionId = sessionId;
+    }
+
+    public void applyExceptionContext(
+            String exceptionClass,
+            String exceptionMessage,
+            String rootCauseClass,
+            String rootCauseMessage,
+            String stacktrace,
+            Integer httpStatus
+    ) {
+        this.exceptionClass = exceptionClass;
+        this.exceptionMessage = exceptionMessage;
+        this.rootCauseClass = rootCauseClass;
+        this.rootCauseMessage = rootCauseMessage;
+        this.stacktrace = stacktrace;
+        this.httpStatus = httpStatus;
+        this.stackHash = StackHashUtil.compute(exceptionClass, stacktrace);
     }
 
     public void markProcessed() {
