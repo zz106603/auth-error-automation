@@ -42,6 +42,9 @@ create table if not exists auth_error (
     -- stacktrace는 크고 민감할 수 있어서 보관 정책 필요
     stacktrace           text,
 
+    stack_hash          varchar(64),
+    http_status         integer,
+
     -- ===== 원본 데이터(유연성/재현) =====
     request_headers      jsonb,      -- 필요시 일부만(민감 헤더 제거)
     request_body         jsonb,      -- 가능하면 마스킹/부분 저장
@@ -91,3 +94,6 @@ create index if not exists ix_auth_error_trace_id
 
 create index if not exists ix_auth_error_service_env_time
     on auth_error(source_service, environment, occurred_at desc);
+
+create index if not exists ix_auth_error_stack_hash
+    on auth_error (stack_hash);
