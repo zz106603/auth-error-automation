@@ -5,6 +5,7 @@ import com.yunhwan.auth.error.domain.outbox.OutboxMessage;
 import com.yunhwan.auth.error.domain.outbox.descriptor.OutboxEventDescriptor;
 import com.yunhwan.auth.error.usecase.autherror.config.AuthErrorProperties;
 import com.yunhwan.auth.error.usecase.autherror.dto.AuthErrorRecordedPayload;
+import com.yunhwan.auth.error.usecase.autherror.dto.AuthErrorWriteCommand;
 import com.yunhwan.auth.error.usecase.autherror.dto.AuthErrorWriteResult;
 import com.yunhwan.auth.error.usecase.autherror.port.AuthErrorStore;
 import com.yunhwan.auth.error.usecase.outbox.OutboxWriter;
@@ -34,16 +35,37 @@ public class AuthErrorWriter {
      * 2) outbox_message UPSERT/RETURNING (멱등 보장)
      */
     @Transactional
-    public AuthErrorWriteResult record(String requestId, OffsetDateTime occurredAt) {
+    public AuthErrorWriteResult record(AuthErrorWriteCommand cmd) {
         // 1) auth_error 저장
 
         OffsetDateTime now = OffsetDateTime.now(clock);
         AuthError toSave = AuthError.record(
-                requestId,
-                occurredAt,
+                cmd.requestId(),
+                cmd.occurredAt(),
                 now,
                 authErrorProperties.getSourceService(),
                 authErrorProperties.getEnvironment()
+        );
+
+
+        // 요청 컨텍스트
+        toSave.applyRequestContext(
+                cmd.httpMethod(),
+                cmd.requestUri(),
+                cmd.clientIp(),
+                cmd.userAgent(),
+                cmd.userId(),
+                cmd.sessionId()
+        );
+
+        // http_status 저장 + stack_hash 계산
+        toSave.applyExceptionContext(
+                cmd.exceptionClass(),
+                cmd.exceptionMessage(),
+                cmd.rootCauseClass(),
+                cmd.rootCauseMessage(),
+                cmd.stacktrace(),
+                cmd.httpStatus()
         );
 
         AuthError saved = authErrorStore.save(toSave);
