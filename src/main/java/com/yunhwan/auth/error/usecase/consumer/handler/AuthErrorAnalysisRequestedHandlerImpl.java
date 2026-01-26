@@ -4,6 +4,7 @@ import com.yunhwan.auth.error.common.exception.NonRetryableAuthErrorException;
 import com.yunhwan.auth.error.domain.autherror.AuthError;
 import com.yunhwan.auth.error.domain.autherror.AuthErrorStatus;
 import com.yunhwan.auth.error.infra.messaging.consumer.parser.JacksonAuthErrorAnalysisRequestedPayloadParser;
+import com.yunhwan.auth.error.usecase.autherror.analysis.AuthErrorAnalysisService;
 import com.yunhwan.auth.error.usecase.autherror.dto.AuthErrorAnalysisRequestedPayload;
 import com.yunhwan.auth.error.usecase.autherror.port.AuthErrorStore;
 import lombok.RequiredArgsConstructor;
@@ -20,6 +21,7 @@ import java.util.Map;
 public class AuthErrorAnalysisRequestedHandlerImpl implements AuthErrorHandler{
 
     private final AuthErrorStore authErrorStore;
+    private final AuthErrorAnalysisService analysisService;
     private final JacksonAuthErrorAnalysisRequestedPayloadParser parser;
 
     @Override
@@ -42,6 +44,9 @@ public class AuthErrorAnalysisRequestedHandlerImpl implements AuthErrorHandler{
                 .contains(authError.getStatus())) {
             return;
         }
+
+        // ✅ 1. 분석 수행 + 결과 저장
+        analysisService.analyzeAndSave(authError.getId());
 
         authError.markProcessed();
     }
