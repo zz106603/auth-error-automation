@@ -3,7 +3,7 @@
     <springProperty scope="context" name="APP_NAME" source="spring.application.name" defaultValue="auth-error-automation"/>
     <springProperty scope="context" name="APP_ENV" source="spring.profiles.active" defaultValue="local"/>
 
-    <!-- JSON stdout -->
+    <!-- JSON stdout (전체 로그) -->
     <appender name="JSON_STDOUT" class="ch.qos.logback.core.ConsoleAppender">
         <encoder class="net.logstash.logback.encoder.LogstashEncoder">
             <customFields>{"service":"${APP_NAME}","env":"${APP_ENV}"}</customFields>
@@ -11,8 +11,8 @@
         </encoder>
     </appender>
 
-    <!-- JSON file (로컬 filebeat가 tail) -->
-    <appender name="JSON_FILE" class="ch.qos.logback.core.rolling.RollingFileAppender">
+    <!-- JSON file (AuthError 이벤트만: 로컬 filebeat가 tail) -->
+    <appender name="AUTH_ERROR_EVENTS_FILE" class="ch.qos.logback.core.rolling.RollingFileAppender">
         <file>./logs/auth-error-events.json</file>
 
         <rollingPolicy class="ch.qos.logback.core.rolling.TimeBasedRollingPolicy">
@@ -26,9 +26,16 @@
         </encoder>
     </appender>
 
+    <!-- AuthErrorEventLogger 전용 로거: 이 로거만 파일로 -->
+    <logger name="com.yunhwan.auth.error.infra.logging.AuthErrorEventLogger"
+            level="INFO"
+            additivity="false">
+        <appender-ref ref="AUTH_ERROR_EVENTS_FILE"/>
+    </logger>
+
+    <!-- root는 파일로 안 보내고(섞이지 않게), stdout만 -->
     <root level="INFO">
         <appender-ref ref="JSON_STDOUT"/>
-        <appender-ref ref="JSON_FILE"/>
     </root>
 
 </configuration>
