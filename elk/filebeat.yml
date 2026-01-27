@@ -1,0 +1,27 @@
+filebeat.inputs:
+  - type: filestream
+    id: auth-error-events
+    enabled: true
+    paths:
+      # 수집할 로그 파일 경로 (RollingFileAppender 패턴 대응)
+      - /var/log/auth-error/auth-error-events.json
+      - /var/log/auth-error/auth-error-events.*.json
+    parsers:
+      # NDJSON(Newline Delimited JSON) 파싱 설정
+      - ndjson:
+          target: ""          # JSON 필드를 루트 레벨로 승격 (message 필드 하위가 아님)
+          add_error_key: true # 파싱 에러 발생 시 error 필드 추가
+          overwrite_keys: true # 기존 필드와 충돌 시 덮어쓰기 허용
+
+output.elasticsearch:
+  hosts: ["http://elasticsearch:9200"]
+  # 날짜별 인덱스 생성 (예: auth-error-events-2024.05.21)
+  index: "auth-error-events-%{+yyyy.MM.dd}"
+  # Ingest Pipeline 지정 (데이터 전처리/변환 로직 적용)
+  pipeline: "auth-error-pipeline"
+
+# ILM(Index Lifecycle Management) 및 템플릿 자동 설정 비활성화
+# (커스텀 인덱스 이름 및 파이프라인 사용을 위해 직접 관리)
+setup.ilm.enabled: false
+setup.template.enabled: false
+logging.level: info
