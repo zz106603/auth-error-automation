@@ -22,11 +22,7 @@ public class AuthErrorEventLogger {
     private final Clock clock;
 
     public void analysisCompleted(AuthError authError, AuthErrorAnalysisResult r) {
-        Map<String, Object> evt = new LinkedHashMap<>();
-        evt.put("event_type", "auth_error.analysis_completed");
-        evt.put("event_id", UUID.randomUUID().toString());
-        evt.put("occurred_at", OffsetDateTime.now(clock).toString());
-        evt.put("auth_error_id", authError.getId());
+        Map<String, Object> evt = createBaseEvent("auth_error.analysis_completed", authError);
 
         Map<String, Object> analysis = new LinkedHashMap<>();
         analysis.put("category", r.getCategory());
@@ -43,11 +39,7 @@ public class AuthErrorEventLogger {
     }
 
     public void recorded(AuthError authError, Long outboxId, String idempotencyKey) {
-        Map<String, Object> evt = new LinkedHashMap<>();
-        evt.put("event_type", "auth_error.recorded");
-        evt.put("event_id", UUID.randomUUID().toString());
-        evt.put("occurred_at", OffsetDateTime.now(clock).toString());
-        evt.put("auth_error_id", authError.getId());
+        Map<String, Object> evt = createBaseEvent("auth_error.recorded", authError);
         evt.put("outbox_id", outboxId);
         evt.put("idempotency_key", idempotencyKey);
 
@@ -64,5 +56,14 @@ public class AuthErrorEventLogger {
         ));
 
         log.info("auth_error_event {}", entries(evt));
+    }
+
+    private Map<String, Object> createBaseEvent(String eventType, AuthError authError) {
+        Map<String, Object> evt = new LinkedHashMap<>();
+        evt.put("event_type", eventType);
+        evt.put("event_id", UUID.randomUUID().toString());
+        evt.put("occurred_at", OffsetDateTime.now(clock).toString());
+        evt.put("auth_error_id", authError.getId());
+        return evt;
     }
 }
