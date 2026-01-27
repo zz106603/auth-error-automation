@@ -3,6 +3,7 @@ package com.yunhwan.auth.error.usecase.autherror;
 import com.yunhwan.auth.error.domain.autherror.AuthError;
 import com.yunhwan.auth.error.domain.outbox.OutboxMessage;
 import com.yunhwan.auth.error.domain.outbox.descriptor.OutboxEventDescriptor;
+import com.yunhwan.auth.error.infra.logging.AuthErrorEventLogger;
 import com.yunhwan.auth.error.usecase.autherror.config.AuthErrorProperties;
 import com.yunhwan.auth.error.usecase.autherror.dto.AuthErrorRecordedPayload;
 import com.yunhwan.auth.error.usecase.autherror.dto.AuthErrorWriteCommand;
@@ -27,6 +28,7 @@ public class AuthErrorWriter {
     private final Clock clock;
     private final AuthErrorProperties authErrorProperties;
     private final OutboxEventDescriptor<AuthErrorRecordedPayload> authErrorRecordedEventDescriptor;
+    private final AuthErrorEventLogger eventLogger;
 
 
     /**
@@ -83,12 +85,10 @@ public class AuthErrorWriter {
                 payload
         );
 
-        log.info(
-                "[AuthErrorWriter] outbox created. outboxId={}, aggregateId={}, payload={}",
-                outbox.getId(),
-                outbox.getAggregateId(),
-                outbox.getPayload()
-        );
+        // idempotency_key를 descriptor에서 뽑아서 이벤트 로그에 포함
+        String idemKey = authErrorRecordedEventDescriptor.idempotencyKey(payload);
+        // 이벤트 로그
+        eventLogger.recorded(saved, outbox.getId(), idemKey);
 
         return new AuthErrorWriteResult(saved.getId(), outbox.getId());
     }

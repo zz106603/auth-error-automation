@@ -3,6 +3,7 @@ package com.yunhwan.auth.error.usecase.autherror.analysis;
 import com.yunhwan.auth.error.common.exception.AuthErrorNotFoundException;
 import com.yunhwan.auth.error.domain.autherror.AuthError;
 import com.yunhwan.auth.error.domain.autherror.analysis.AuthErrorAnalysisResult;
+import com.yunhwan.auth.error.infra.logging.AuthErrorEventLogger;
 import com.yunhwan.auth.error.usecase.autherror.port.AuthErrorAnalysisResultStore;
 import com.yunhwan.auth.error.usecase.autherror.port.AuthErrorAnalyzer;
 import com.yunhwan.auth.error.usecase.autherror.port.AuthErrorStore;
@@ -20,6 +21,7 @@ public class AuthErrorAnalysisService {
     private final AuthErrorStore authErrorStore;
     private final AuthErrorAnalysisResultStore resultStore;
     private final AuthErrorAnalyzer analyzer;
+    private final AuthErrorEventLogger eventLogger;
 
     @Transactional
     public void analyzeAndSave(Long authErrorId) {
@@ -52,6 +54,9 @@ public class AuthErrorAnalysisService {
                 .confidence(out.confidence())
                 .build();
 
-        resultStore.save(row);
+        AuthErrorAnalysisResult saved = resultStore.save(row);
+
+        // 분석 완료 이벤트 로그
+        eventLogger.analysisCompleted(authError, saved);
     }
 }
