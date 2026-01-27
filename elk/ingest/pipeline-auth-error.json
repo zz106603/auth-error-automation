@@ -1,0 +1,30 @@
+{
+  "description": "auth-error-event pipeline (debug keep original)",
+  "processors": [
+    {
+      "set": {
+        "field": "event.original",
+        "value": "{{{message}}}",
+        "override": false,
+        "ignore_failure": true,
+        "description": "원본 메시지 백업 (디버깅용)"
+      }
+    },
+    {
+      "json": {
+        "field": "event.original",
+        "add_to_root": true,
+        "ignore_failure": true,
+        "description": "JSON 문자열을 파싱하여 문서 루트에 필드 추가"
+      }
+    },
+    {
+      "date": {
+        "field": "occurred_at",
+        "formats": ["ISO8601"],
+        "ignore_failure": true,
+        "description": "로그 발생 시간(occurred_at)을 @timestamp로 매핑하여 시계열 분석 가능하게 함"
+      }
+    }
+  ]
+}

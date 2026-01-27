@@ -1,0 +1,42 @@
+services:
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.13.4
+    environment:
+      # 단일 노드로 실행 (클러스터 구성 없이 개발/테스트용)
+      - discovery.type=single-node
+      # 보안 기능 비활성화 (로컬 개발 편의성, 운영 환경에선 true 권장)
+      - xpack.security.enabled=false
+      # 힙 메모리 고정 (컨테이너 메모리 안정성 확보)
+      - ES_JAVA_OPTS=-Xms1g -Xmx1g
+    ports:
+      - "9200:9200"
+    volumes:
+      # 컨테이너 재시작 시에도 데이터 유지
+      - esdata:/usr/share/elasticsearch/data
+
+  kibana:
+    image: docker.elastic.co/kibana/kibana:8.13.4
+    environment:
+      # Elasticsearch 연결 주소
+      - ELASTICSEARCH_HOSTS=http://elasticsearch:9200
+    ports:
+      - "5601:5601"
+    depends_on:
+      - elasticsearch
+
+  filebeat:
+    image: docker.elastic.co/beats/filebeat:8.13.4
+    # 호스트의 로그 파일 접근 권한 문제 해결을 위해 root 실행
+    user: root
+    # 설정 파일 권한 수정 후 실행 (Filebeat는 설정 파일이 쓰기 가능하면 실행 거부함)
+    command: ["sh","-c","chmod go-w /usr/share/filebeat/filebeat.yml && filebeat -e"]
+    volumes:
+      # 설정 파일 마운트
+      - ./filebeat.yml:/usr/share/filebeat/filebeat.yml
+      # 호스트의 로그 디렉토리를 컨테이너 내부로 읽기 전용 마운트
+      - ../logs:/var/log/auth-error:ro
+    depends_on:
+      - elasticsearch
+
+volumes:
+  esdata:
