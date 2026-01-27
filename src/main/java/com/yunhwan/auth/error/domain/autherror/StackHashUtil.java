@@ -2,6 +2,7 @@ package com.yunhwan.auth.error.domain.autherror;
 
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 
 public final class StackHashUtil {
     private StackHashUtil() {}
@@ -13,13 +14,9 @@ public final class StackHashUtil {
 
     private static String topLines(String s, int n) {
         if (s == null || s.isBlank()) return "";
-        String[] lines = s.split("\\R");
-        StringBuilder sb = new StringBuilder();
-        int count = Math.min(n, lines.length);
-        for (int i = 0; i < count; i++) {
-            sb.append(lines[i]).append('\n');
-        }
-        return sb.toString();
+        return s.lines()
+                .limit(n)
+                .collect(java.util.stream.Collectors.joining("\n", "", "\n"));
     }
 
     private static String sha256Hex(String input) {
@@ -29,7 +26,7 @@ public final class StackHashUtil {
             StringBuilder hex = new StringBuilder(dig.length * 2);
             for (byte b : dig) hex.append(String.format("%02x", b));
             return hex.toString();
-        } catch (Exception e) {
+        } catch (NoSuchAlgorithmException e) {
             throw new IllegalStateException("sha256 compute failed", e);
         }
     }
