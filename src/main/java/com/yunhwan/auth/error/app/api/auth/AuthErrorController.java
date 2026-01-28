@@ -11,7 +11,7 @@ import org.springframework.web.bind.annotation.*;
 @RestController
 @RequiredArgsConstructor
 @RequestMapping("/api/auth-errors")
-public class AuthController {
+public class AuthErrorController {
 
     private final AuthErrorFacade authErrorFacade;
 
