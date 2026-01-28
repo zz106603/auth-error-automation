@@ -1,6 +1,8 @@
 package com.yunhwan.auth.error.usecase.autherror;
 
 
+import com.yunhwan.auth.error.app.api.auth.dto.ApplyAnalysisDecisionCommand;
+import com.yunhwan.auth.error.app.api.auth.dto.ApplyAnalysisDecisionResult;
 import com.yunhwan.auth.error.common.exception.NonRetryableAuthErrorException;
 import com.yunhwan.auth.error.domain.autherror.AuthError;
 import com.yunhwan.auth.error.domain.autherror.AuthErrorStatus;
@@ -75,7 +77,7 @@ public class AuthErrorDecisionApplierImpl implements AuthErrorDecisionApplier {
 
     private static String noteWithActor(String action, String note, DecisionActor actor) {
         String prefix = "[" + actor + "/" + action + "] ";
-        if (note == null || note.isBlank()) return prefix.trim();
+        if (note.isBlank()) return prefix.trim();
         return prefix + note;
     }
 }
