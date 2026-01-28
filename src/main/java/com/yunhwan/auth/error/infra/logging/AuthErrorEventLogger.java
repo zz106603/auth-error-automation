@@ -1,6 +1,7 @@
 package com.yunhwan.auth.error.infra.logging;
 
 import com.yunhwan.auth.error.domain.autherror.AuthError;
+import com.yunhwan.auth.error.domain.autherror.AuthErrorStatus;
 import com.yunhwan.auth.error.domain.autherror.analysis.AuthErrorAnalysisResult;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -54,6 +55,29 @@ public class AuthErrorEventLogger {
                 "message", authError.getExceptionMessage(),
                 "stack_hash", authError.getStackHash()
         ));
+
+        log.info("auth_error_event {}", entries(evt));
+    }
+
+    public void decisionApplied(
+            AuthError authError,
+            AuthErrorStatus fromStatus,
+            AuthErrorStatus toStatus,
+            String decisionType,
+            String decidedBy,
+            String note
+    ) {
+        Map<String, Object> evt = createBaseEvent("auth_error.decision_applied", authError);
+
+        evt.put("from_status", String.valueOf(fromStatus));
+        evt.put("to_status", String.valueOf(toStatus));
+
+        Map<String, Object> decision = new LinkedHashMap<>();
+        decision.put("type", decisionType);
+        decision.put("decided_by", decidedBy);
+        if (note != null && !note.isBlank()) decision.put("note", note);
+
+        evt.put("decision", decision);
 
         log.info("auth_error_event {}", entries(evt));
     }

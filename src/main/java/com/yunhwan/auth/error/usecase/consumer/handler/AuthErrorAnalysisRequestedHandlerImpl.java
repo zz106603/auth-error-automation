@@ -29,7 +29,6 @@ public class AuthErrorAnalysisRequestedHandlerImpl implements AuthErrorHandler{
     public void handle(String payload, Map<String, Object> headers) {
 
         Long outboxId = requireLong(headers, "outboxId");
-
         requireString(headers, "eventType");
         requireString(headers, "aggregateType");
 
@@ -40,15 +39,19 @@ public class AuthErrorAnalysisRequestedHandlerImpl implements AuthErrorHandler{
                         new NonRetryableAuthErrorException(
                                 "authError not found id=" + parsed.authErrorId()));
 
-        if (EnumSet.of(AuthErrorStatus.PROCESSED, AuthErrorStatus.RESOLVED, AuthErrorStatus.IGNORED)
+        if (EnumSet.of(AuthErrorStatus.PROCESSED, AuthErrorStatus.RESOLVED, AuthErrorStatus.IGNORED, AuthErrorStatus.FAILED)
                 .contains(authError.getStatus())) {
             return;
         }
 
-        // ✅ 1. 분석 수행 + 결과 저장
+        // 1) 분석 수행 + 결과 저장 (여기까지가 analysis 단계의 책임)
         analysisService.analyzeAndSave(authError.getId());
 
-        authError.markProcessed();
+        // 2) 처리 완료(PROCESSED)로 확정하지 말고, "분석 완료"로만 둔다
+        authError.markAnalysisCompleted();
+
+        log.info("[AuthErrorHandler] analysis completed. authErrorId={}, outboxId={}",
+                authError.getId(), outboxId);
     }
 
     private Long requireLong(Map<String, Object> headers, String key) {
