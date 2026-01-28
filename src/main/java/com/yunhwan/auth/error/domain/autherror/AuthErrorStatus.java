@@ -4,6 +4,7 @@ public enum AuthErrorStatus {
     NEW(false),
     RETRY(false),
     ANALYSIS_REQUESTED(false),
+    ANALYSIS_COMPLETED(false),
     PROCESSED(true),
     FAILED(true),
     RESOLVED(true),

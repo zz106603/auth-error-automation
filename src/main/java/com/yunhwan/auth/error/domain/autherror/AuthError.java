@@ -206,9 +206,16 @@ public class AuthError {
     }
 
     public void markProcessed() {
+        markProcessed(null);
+    }
+
+    public void markProcessed(String note) {
         this.status = AuthErrorStatus.PROCESSED;
         this.lastProcessedAt = OffsetDateTime.now();
         this.nextRetryAt = null;
+        if (note != null && !note.isBlank()) {
+            this.resolutionNote = note;
+        }
     }
 
     public void markRetry() {
@@ -223,8 +230,21 @@ public class AuthError {
         this.nextRetryAt = null;
     }
 
+    public void markIgnored(String note) {
+        this.status = AuthErrorStatus.IGNORED;
+        if (note != null && !note.isBlank()) {
+            this.resolutionNote = note;
+        }
+        this.resolvedAt = OffsetDateTime.now();
+        this.nextRetryAt = null;
+    }
+
     public void markAnalysisRequested() {
         this.status = AuthErrorStatus.ANALYSIS_REQUESTED;
+    }
+
+    public void markAnalysisCompleted() {
+        this.status = AuthErrorStatus.ANALYSIS_COMPLETED;
     }
 
     public void resolve(String note) {

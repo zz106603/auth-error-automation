@@ -69,7 +69,7 @@ create table if not exists auth_error (
 -- status 값 제한(ENUM 대신 체크 제약)
 alter table auth_error
     add constraint ck_auth_error_status
-        check (status in ('NEW','RETRY','PROCESSED','ANALYSIS_REQUESTED', 'FAILED','RESOLVED','IGNORED'));
+        check (status in ('NEW','RETRY','PROCESSED','ANALYSIS_REQUESTED','ANALYSIS_COMPLETED', 'FAILED','RESOLVED','IGNORED'));
 
 -- 중복 방지
 create unique index if not exists ux_auth_error_dedup_key
