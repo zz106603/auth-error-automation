@@ -39,8 +39,8 @@ public class AuthErrorAnalysisRequestedHandlerImpl implements AuthErrorHandler{
                         new NonRetryableAuthErrorException(
                                 "authError not found id=" + parsed.authErrorId()));
 
-        if (EnumSet.of(AuthErrorStatus.PROCESSED, AuthErrorStatus.RESOLVED, AuthErrorStatus.IGNORED, AuthErrorStatus.FAILED)
-                .contains(authError.getStatus())) {
+        //  PROCESSED, FAILED, RESOLVED, IGNORED
+        if (authError.getStatus().isTerminal()) {
             return;
         }
 
