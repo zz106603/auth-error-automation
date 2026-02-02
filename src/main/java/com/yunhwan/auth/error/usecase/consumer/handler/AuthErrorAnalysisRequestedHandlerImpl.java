@@ -5,6 +5,7 @@ import com.yunhwan.auth.error.domain.autherror.AuthError;
 import com.yunhwan.auth.error.domain.autherror.AuthErrorStatus;
 import com.yunhwan.auth.error.infra.messaging.consumer.parser.JacksonAuthErrorAnalysisRequestedPayloadParser;
 import com.yunhwan.auth.error.usecase.autherror.analysis.AuthErrorAnalysisService;
+import com.yunhwan.auth.error.usecase.autherror.cluster.AuthErrorClusterLinker;
 import com.yunhwan.auth.error.usecase.autherror.dto.AuthErrorAnalysisRequestedPayload;
 import com.yunhwan.auth.error.usecase.autherror.port.AuthErrorStore;
 import lombok.RequiredArgsConstructor;
@@ -22,6 +23,7 @@ public class AuthErrorAnalysisRequestedHandlerImpl implements AuthErrorHandler{
 
     private final AuthErrorStore authErrorStore;
     private final AuthErrorAnalysisService analysisService;
+    private final AuthErrorClusterLinker clusterLinker;
     private final JacksonAuthErrorAnalysisRequestedPayloadParser parser;
 
     @Override
@@ -47,7 +49,10 @@ public class AuthErrorAnalysisRequestedHandlerImpl implements AuthErrorHandler{
         // 1) 분석 수행 + 결과 저장 (여기까지가 analysis 단계의 책임)
         analysisService.analyzeAndSave(authError.getId());
 
-        // 2) 처리 완료(PROCESSED)로 확정하지 말고, "분석 완료"로만 둔다
+        // 2) Step2: stack_hash 기반 cluster upsert + link
+        clusterLinker.link(authError.getId(), authError.getStackHash());
+
+        // 3) 처리 완료(PROCESSED)로 확정하지 말고, "분석 완료"로만 둔다
         authError.markAnalysisCompleted();
 
         log.info("[AuthErrorHandler] analysis completed. authErrorId={}, outboxId={}",
