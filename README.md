@@ -1,22 +1,26 @@
 # Auth Error Outbox Pipeline
 
-인증(Auth) 과정에서 발생하는 오류 이벤트를
+인증(Auth) 과정에서 발생하는 오류 이벤트를  
+**Transactional Outbox Pattern** 기반으로 유실 없이 수집하고,  
+비동기 처리 파이프라인(Retry/DLQ 포함)으로 안정적으로 전파/처리하며,  
+`stack_hash` 기반 **Cluster(오류 군집)** 로 집계하여 모니터링 가능한 상태로 만드는 백엔드 인프라 프로젝트입니다.
 
-**트랜잭셔널 아웃박스 패턴(Transactional Outbox Pattern)** 으로 수집하고,
-
-비동기 처리 파이프라인을 통해 **AI 기반 요약·분석 시스템으로 전달하기 위한 백엔드 인프라 프로젝트입니다.**
+> AI 요약/추천 기능은 본 프로젝트의 코어가 아니라 **Cluster를 입력 단위로 결합 가능한 확장 포인트(Future Extension)** 로만 남겨둡니다.
 
 ---
 
 ## Project Goal
 
-이 프로젝트의 목표는 단순한 메시지 발행이 아니라,
+이 프로젝트의 목표는 단순 메시지 발행이 아니라,
 
-- 인증 오류 이벤트를 **유실 없이 수집**
-- 장애 상황에서도 **재처리 가능한 상태로 관리**
-- 누적된 오류 이벤트를 기반으로 **AI 분석 및 요약에 활용**
+- 인증 오류 이벤트를 **유실 없이 수집** (Outbox)
+- 장애 상황에서도 **재시도/격리 가능한 상태로 관리** (TTL Retry / DLQ)
+- 중복 처리 없이 **멱등성(Idempotency) 보장**
+- 누적된 오류를 `stack_hash` 기준으로 **Cluster 집계**하여
+  - “같은 원인으로 보이는 오류 군”을 빠르게 파악
+  - 대시보드/알림/운영 분석에 활용
 
-할 수 있는 **신뢰 가능한 이벤트 파이프라인**을 구축하는 것입니다.
+할 수 있는 **신뢰 가능한 Error Ops Pipeline**을 구축하는 것입니다.
 
 ---
 
@@ -25,10 +29,41 @@
 
 ### Components
 
-- **Poller**: 처리 가능한 메시지를 claim
-- **Processor**: 메시지 처리 및 상태 전이
+- **Outbox Writer**: AuthError 저장과 이벤트 적재를 동일 트랜잭션으로 처리
+- **Poller**: 처리 가능한 메시지를 claim (`FOR UPDATE SKIP LOCKED` 기반)
+- **Processor/Consumer**: 메시지 처리 및 상태 전이
 - **Reaper**: 장시간 PROCESSING 상태 메시지 회수
-- **Publisher**: 메시지 브로커 연동 (RabbitMQ 예정)
+- **Retry Router**: TTL 기반 Retry Queue / DLQ 라우팅
+- **Cluster Linker**: `stack_hash` 기반 Cluster upsert + link (집계 단위 생성)
+
+---
+
+## Message Lifecycle
+
+| Status | Description |
+| --- | --- |
+| `PENDING` | 처리 대기 |
+| `PROCESSING` | poller에 의해 claim |
+| `PUBLISHED` | 정상 publish/처리 완료 |
+| `DEAD` | 재시도 초과(DLQ) |
+
+---
+
+## State Transition Diagram
+![outbox-state.svg](docs/diagrams/outbox-state.svg)
+
+---
+
+## Cluster Model (AuthError Aggregation)
+
+이 프로젝트는 분석(analysis) 완료된 AuthError를 `stack_hash` 기준으로 Cluster에 연결합니다.
+
+- **Cluster**: `cluster_key = stack_hash`
+- **ClusterItem**: `cluster_id ↔ auth_error_id` 매핑(중복 link 방지)
+- **Cluster count / last_seen**: 신규 link일 때만 count 증가, 중복에는 안전하게 touch만 수행
+
+> Cluster는 “운영자가 판단/조치”를 강제하지 않고,  
+> 모니터링 및 추후 AI 결합을 위한 **집계 단위(Read Model) 기반**으로만 유지합니다.
 
 ---
 
@@ -83,40 +118,21 @@ com.yunhwan.auth.error
 
 ---
 
-## Message Lifecycle
-
-| Status | Description |
-| --- | --- |
-| `PENDING` | 처리 대기 |
-| `PROCESSING` | poller에 의해 claim |
-| `PUBLISHED` | 정상 처리 완료 |
-| `DEAD` | 재시도 초과 |
-
----
-
-## State Transition Diagram
-![outbox-state.svg](docs/diagrams/outbox-state.svg)
-
----
-
 ## Reliability Strategy
 
-- Idempotency Key 기반 중복 방지
-- 재시도 횟수 및 다음 처리 시점(`next_retry_at`) 관리
-- Reaper를 통한 stuck 메시지 회수
-- 상태 기반 전이로 메시지 유실 방지
+- **Transactional Outbox**로 이벤트 유실 방지
+- **Idempotency Key** 기반 중복 처리 방지
+- TTL 기반 **Retry Queue / DLQ**로 실패 격리
+- **Reaper**로 stuck(PROCESSING) 메시지 회수
+- 상태 기반(State Machine) 전이로 처리 흐름을 명확히 유지
 
 ---
 
 ## Testing Strategy
 
 - **PostgreSQL(Testcontainers)** 기반 통합 테스트
-- Poller / Processor / Reaper 흐름 검증
-- 테스트 전용 Publisher를 사용해
-    - 성공
-    - 실패
-    - 재시도
-    - DEAD 전이 시나리오를 의도적으로 재현
+- Poller / Consumer / Retry / DLQ / Reaper 시나리오 검증
+- 의도적으로 실패를 주입하여 재시도/격리/멱등 처리의 정합성 확인
 
 ---
 
@@ -126,6 +142,7 @@ com.yunhwan.auth.error
 - Spring Boot
 - Spring Data JPA
 - PostgreSQL
+- RabbitMQ
 - Testcontainers
 - JUnit 5
 
@@ -135,12 +152,24 @@ com.yunhwan.auth.error
 
 - [x]  Outbox 테이블 및 상태 전이
 - [x]  Poller / Processor / Reaper 구성
-- [x]  재시도 및 DEAD 처리
+- [x]  TTL 기반 Retry / DLQ 처리
 - [x]  Idempotency 기반 중복 방지
 - [x]  DB 기반 통합 테스트
-- [ ]  RabbitMQ 실제 연동
-- [ ]  AI 요약 및 분석 파이프라인 연결
-- [ ]  장애 패턴 기반 분석 고도화
+- [x]  stack_hash 기반 Cluster upsert + link
+- [ ]  RabbitMQ 실제 운영 설정(성능/튜닝) 고도화
+- [ ]  ELK(또는 대체) 대시보드/지표 완성
+- [ ]  부하 테스트(ingest/publish/consumer failure rate/dlq) 및 병목 분석
+
+---
+
+## Future Extension (AI-ready)
+본 프로젝트는 AI를 코어로 두지 않지만,
+Cluster는 “동일 원인군”을 안정적으로 묶어주는 단위이므로,
+향후 다음과 같은 기능을 **옵션으로 안전하게 결합**할 수 있습니다.
+
+- Cluster 요약/원인 추정
+- 빈도/영향도 기반 자동 리포팅
+- 운영자 승인 기반 추천 액션(추후 필요 시)
 
 ---
 
