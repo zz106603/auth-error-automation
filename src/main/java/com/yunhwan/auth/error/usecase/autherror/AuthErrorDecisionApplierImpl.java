@@ -3,21 +3,19 @@ package com.yunhwan.auth.error.usecase.autherror;
 
 import com.yunhwan.auth.error.app.api.auth.dto.ApplyAnalysisDecisionCommand;
 import com.yunhwan.auth.error.app.api.auth.dto.ApplyAnalysisDecisionResult;
+import com.yunhwan.auth.error.common.annotation.ConditionalOnOpsDecisionEnabled;
 import com.yunhwan.auth.error.common.exception.NonRetryableAuthErrorException;
 import com.yunhwan.auth.error.domain.autherror.AuthError;
 import com.yunhwan.auth.error.domain.autherror.AuthErrorStatus;
 import com.yunhwan.auth.error.infra.logging.AuthErrorEventLogger;
-import com.yunhwan.auth.error.usecase.autherror.dto.*;
+import com.yunhwan.auth.error.usecase.autherror.dto.DecisionActor;
 import com.yunhwan.auth.error.usecase.autherror.port.AuthErrorStore;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
-import org.springframework.context.annotation.Profile;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-@Profile("ops")
-@ConditionalOnProperty(name = "auth-error.ops.decision.enabled", havingValue = "true")
+@ConditionalOnOpsDecisionEnabled
 @Slf4j
 @Service
 @RequiredArgsConstructor
