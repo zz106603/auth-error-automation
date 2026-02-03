@@ -11,9 +11,13 @@ import com.yunhwan.auth.error.usecase.autherror.dto.*;
 import com.yunhwan.auth.error.usecase.autherror.port.AuthErrorStore;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.context.annotation.Profile;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+@Profile("ops")
+@ConditionalOnProperty(name = "auth-error.ops.decision.enabled", havingValue = "true")
 @Slf4j
 @Service
 @RequiredArgsConstructor
