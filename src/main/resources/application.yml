@@ -34,3 +34,6 @@ auth-error:
       ttl10m: 600000
       fast-max: 3
       medium-max: 6
+  ops:
+    decision:
+      enabled: false
