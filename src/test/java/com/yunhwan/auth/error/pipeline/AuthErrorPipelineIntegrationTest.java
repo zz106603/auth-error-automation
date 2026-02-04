@@ -6,6 +6,7 @@ import com.yunhwan.auth.error.domain.outbox.OutboxMessage;
 import com.yunhwan.auth.error.domain.outbox.OutboxStatus;
 import com.yunhwan.auth.error.testsupport.base.AbstractIntegrationTest;
 import com.yunhwan.auth.error.usecase.autherror.AuthErrorWriter;
+import com.yunhwan.auth.error.usecase.autherror.dto.AuthErrorWriteCommand;
 import com.yunhwan.auth.error.usecase.autherror.port.AuthErrorStore;
 import com.yunhwan.auth.error.usecase.consumer.port.ProcessedMessageStore;
 import com.yunhwan.auth.error.usecase.outbox.OutboxPoller;
@@ -52,7 +53,7 @@ class AuthErrorPipelineIntegrationTest extends AbstractIntegrationTest {
     @DisplayName("Pipeline Success: AuthError 기록부터 최종 처리(PROCESSED)까지 정상적으로 완료되어야 한다")
     void 파이프라인_정상_처리_및_상태_전이_확인() {
         // Given: AuthError 기록 (초기 상태 PENDING)
-        var res = authErrorWriter.record("REQ" + UUID.randomUUID(), OffsetDateTime.now());
+        var res = authErrorWriter.record(newTestCommand());
         long authErrorId = res.authErrorId();
 
         // -------------------------------------------------------
@@ -126,5 +127,26 @@ class AuthErrorPipelineIntegrationTest extends AbstractIntegrationTest {
                             .withFailMessage("Analysis ProcessedMessage 상태는 DONE이어야 합니다.")
                             .isEqualTo(ProcessedStatus.DONE);
                 });
+    }
+
+    private AuthErrorWriteCommand newTestCommand() {
+        return new AuthErrorWriteCommand(
+                "REQ-" + UUID.randomUUID(),
+                OffsetDateTime.now(),
+
+                401,                    // httpStatus
+                "GET",                  // httpMethod
+                "/api/test",            // requestUri
+                "127.0.0.1",             // clientIp
+                "JUnit",                // userAgent
+                "test-user",            // userId
+                "test-session",         // sessionId
+
+                "IllegalStateException",
+                "test exception",
+                null,
+                null,
+                "stacktrace"
+        );
     }
 }

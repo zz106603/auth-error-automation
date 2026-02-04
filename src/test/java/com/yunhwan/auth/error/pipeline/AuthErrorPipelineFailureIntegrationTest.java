@@ -8,6 +8,7 @@ import com.yunhwan.auth.error.testsupport.config.TestFailInjectionConfig;
 import com.yunhwan.auth.error.testsupport.messaging.DuplicateDeliveryInjector;
 import com.yunhwan.auth.error.testsupport.stub.StubDlqObserver;
 import com.yunhwan.auth.error.usecase.autherror.AuthErrorWriter;
+import com.yunhwan.auth.error.usecase.autherror.dto.AuthErrorWriteCommand;
 import com.yunhwan.auth.error.usecase.autherror.port.AuthErrorStore;
 import com.yunhwan.auth.error.usecase.consumer.port.ProcessedMessageStore;
 import com.yunhwan.auth.error.usecase.outbox.OutboxPoller;
@@ -81,7 +82,7 @@ class AuthErrorPipelineFailureIntegrationTest extends AbstractIntegrationTest {
         analysisFailInjector.failAlways();
 
         // 초기 데이터 기록 (AuthError 생성)
-        var recordResult = authErrorWriter.record("REQ" + UUID.randomUUID(), OffsetDateTime.now());
+        var recordResult = authErrorWriter.record(newTestCommand());
         long authErrorId = recordResult.authErrorId();
 
         // -------------------------------------------------------
@@ -153,7 +154,7 @@ class AuthErrorPipelineFailureIntegrationTest extends AbstractIntegrationTest {
         recordedFailInjector.reset();
         analysisFailInjector.failFirst(1);
 
-        var recordResult = authErrorWriter.record("REQ" + UUID.randomUUID(), OffsetDateTime.now());
+        var recordResult = authErrorWriter.record(newTestCommand());
         long authErrorId = recordResult.authErrorId();
 
         // -------------------------------------------------------
@@ -218,7 +219,7 @@ class AuthErrorPipelineFailureIntegrationTest extends AbstractIntegrationTest {
         recordedFailInjector.reset();
         analysisFailInjector.reset();
 
-        var recordResult = authErrorWriter.record("REQ" + UUID.randomUUID(), OffsetDateTime.now());
+        var recordResult = authErrorWriter.record(newTestCommand());
         long authErrorId = recordResult.authErrorId();
 
         // -------------------------------------------------------
@@ -299,5 +300,26 @@ class AuthErrorPipelineFailureIntegrationTest extends AbstractIntegrationTest {
                             .withFailMessage("중복 메시지는 처리되지 않아야 하므로 재시도 횟수가 같아야 합니다.")
                             .isEqualTo(beforeRetryCount);
                 });
+    }
+
+    private AuthErrorWriteCommand newTestCommand() {
+        return new AuthErrorWriteCommand(
+                "REQ-" + UUID.randomUUID(),
+                OffsetDateTime.now(),
+
+                401,                    // httpStatus
+                "GET",                  // httpMethod
+                "/api/test",            // requestUri
+                "127.0.0.1",             // clientIp
+                "JUnit",                // userAgent
+                "test-user",            // userId
+                "test-session",         // sessionId
+
+                "IllegalStateException",
+                "test exception",
+                null,
+                null,
+                "stacktrace"
+        );
     }
 }
