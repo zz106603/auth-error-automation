@@ -35,7 +35,6 @@ public class AuthErrorEventLogger {
 
         evt.put("analysis", analysis);
 
-        // 핵심: entries(evt)가 "필드"로 들어감 (message 문자열로 안 뭉개짐)
         log.info("auth_error_event {}", entries(evt));
     }
 
@@ -44,13 +43,14 @@ public class AuthErrorEventLogger {
         evt.put("outbox_id", outboxId);
         evt.put("idempotency_key", idempotencyKey);
 
-        evt.put("http", Map.of(
+        // Map.of는 null 허용 X -> null-safe map builder로 교체
+        evt.put("http", mapOfNonNull(
                 "status", authError.getHttpStatus(),
                 "method", authError.getHttpMethod(),
                 "path", authError.getRequestUri()
         ));
 
-        evt.put("error", Map.of(
+        evt.put("error", mapOfNonNull(
                 "exception", authError.getExceptionClass(),
                 "message", authError.getExceptionMessage(),
                 "stack_hash", authError.getStackHash()
@@ -89,5 +89,27 @@ public class AuthErrorEventLogger {
         evt.put("occurred_at", OffsetDateTime.now(clock).toString());
         evt.put("auth_error_id", authError.getId());
         return evt;
+    }
+
+    /**
+     * EN: Null-safe map builder (skips null values).
+     * KR: Map.of 대체 - null 값은 아예 put하지 않아 NPE를 원천 차단.
+     */
+    private Map<String, Object> mapOfNonNull(Object... kv) {
+        if (kv.length % 2 != 0) {
+            throw new IllegalArgumentException("kv length must be even. length=" + kv.length);
+        }
+        Map<String, Object> m = new LinkedHashMap<>();
+        for (int i = 0; i < kv.length; i += 2) {
+            Object k = kv[i];
+            Object v = kv[i + 1];
+            if (k == null) {
+                throw new IllegalArgumentException("key must not be null");
+            }
+            if (v != null) {
+                m.put(String.valueOf(k), v);
+            }
+        }
+        return m;
     }
 }
