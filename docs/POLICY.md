@@ -138,9 +138,9 @@ DEAD
 - **API 멱등성**
     - `auth_error.dedup_key = requestId` (unique)
 - **Outbox 멱등성**
-  - `outbox_message.idempotency_key`는 반드시 `authErrorId` 기반이어야 한다.
-  - requestId는 **Outbox idempotencyKey**에 사용하지 않는다. (requestId는 API dedup 목적에만 사용)
-  - 동일 idempotencyKey는 동일 이벤트 인스턴스를 의미하며, payload 변경은 허용하지 않는다.
+    - `outbox_message.idempotency_key`는 반드시 `authErrorId` 기반이어야 한다.
+    - requestId는 **Outbox idempotencyKey**에 사용하지 않는다. (requestId는 API dedup 목적에만 사용)
+    - 동일 idempotencyKey는 동일 이벤트 인스턴스를 의미하며, payload 변경은 허용하지 않는다.
 - **Consumer 멱등성**
     - `processed_message.outbox_id`는 PK
 - **원자성**
@@ -200,8 +200,8 @@ DEAD
     - requestId (옵션)
     - occurredAt (옵션)
 - IdempotencyKey:
-  - **IdempotencyKey**: `auth_error:recorded:{authErrorId}`
-  - requestId 기반 키는 사용하지 않는다.
+    - **IdempotencyKey**: `auth_error:recorded:{authErrorId}`
+    - requestId 기반 키는 사용하지 않는다.
 
 ### auth.error.analysis.requested.v1
 - Producer: AuthErrorRecordHandler
@@ -209,8 +209,8 @@ DEAD
     - authErrorId (필수)
     - requestId, occurredAt, requestedAt (옵션)
 - IdempotencyKey:
-  - **IdempotencyKey**: `auth_error:analysis_requested:{authErrorId}`
-  - requestId 기반 키는 사용하지 않는다.
+    - **IdempotencyKey**: `auth_error:analysis_requested:{authErrorId}`
+    - requestId 기반 키는 사용하지 않는다.
 
 ---
 
