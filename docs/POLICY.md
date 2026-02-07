@@ -232,15 +232,8 @@ DEAD
 
 ## 8. 미확정 / 충돌 상태 (CONFLICT)
 
-**GAP: Outbox idempotencyKey가 정책과 구현이 불일치**
-
-- **Policy(v2):** Outbox idempotencyKey는 `authErrorId` 기반만 허용한다.
-
+- (Resolved) Outbox idempotencyKey는 `authErrorId` 기반만 허용하도록 구현을 정합화했다.
   (`auth_error:recorded:{authErrorId}`, `auth_error:analysis_requested:{authErrorId}`)
-
-- **Implementation(current):** OutboxMessage idempotencyKey가 `requestId` 기반(또는 requestId 우선 + fallback)으로 생성된다.
-- **Impact:** requestId 재사용/충돌 시 서로 다른 AuthError 이벤트가 동일 outbox row로 upsert되어 이벤트가 드랍/누락될 수 있다.
-- **Decision:** 정책을 기준으로 향후 구현 정합화가 필요하다.
 
 다음 항목은 **의도적으로 보류된 정책 결정**이다.
 

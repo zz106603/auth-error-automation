@@ -19,9 +19,7 @@ public class AuthErrorRecordedEventDescriptor implements OutboxEventDescriptor<A
 
     @Override
     public String idempotencyKey(AuthErrorRecordedPayload payload) {
-        if (payload.requestId() != null && !payload.requestId().isBlank()) {
-            return "auth_error:recorded:" + payload.requestId();
-        }
+        // Outbox 멱등키는 외부 입력(requestId)이 아닌 내부 권위 식별자(authErrorId)만 사용한다.
         return "auth_error:recorded:" + payload.authErrorId();
     }
 }
