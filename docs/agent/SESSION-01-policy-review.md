@@ -74,12 +74,12 @@
   **✅ 채택**
 - 정책 결정
     - 이벤트 인스턴스의 권위 식별자는 **authErrorId**이다.
-    - requestId는 보조 식별자이며, fallback 용도로만 사용된다.
+    - requestId는 Outbox 멱등성 키로 사용하지 않으며, API 요청 중복 제거(deduplication) 용도로만 사용됩니다.
 - 영향(POLICY.md)
     - Event Types
     - Invariants (idempotency boundary)
 - 후속
-    - 문서에서 fallback 규칙 명확화
+    - 없음
 
 ---
 
