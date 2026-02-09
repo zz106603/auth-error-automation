@@ -193,8 +193,8 @@ class AuthErrorPipelineFailureIntegrationTest extends AbstractIntegrationTest {
                 .untilAsserted(() -> {
                     var ae = authErrorStore.findById(authErrorId).orElseThrow();
                     assertThat(ae.getStatus())
-                            .withFailMessage("최종적으로 AuthError 상태는 PROCESSED여야 합니다.")
-                            .isEqualTo(AuthErrorStatus.PROCESSED);
+                            .withFailMessage("최종적으로 AuthError 상태는 ANALYSIS_COMPLETED여야 합니다.")
+                            .isEqualTo(AuthErrorStatus.ANALYSIS_COMPLETED);
                 });
 
         // Then: 두 단계의 Outbox 메시지 모두 DONE 상태인지 확인
@@ -260,7 +260,7 @@ class AuthErrorPipelineFailureIntegrationTest extends AbstractIntegrationTest {
                 .pollInterval(Duration.ofMillis(200))
                 .untilAsserted(() -> {
                     var ae = authErrorStore.findById(authErrorId).orElseThrow();
-                    assertThat(ae.getStatus()).isEqualTo(AuthErrorStatus.PROCESSED);
+                    assertThat(ae.getStatus()).isEqualTo(AuthErrorStatus.ANALYSIS_COMPLETED);
                 });
 
         // -------------------------------------------------------
