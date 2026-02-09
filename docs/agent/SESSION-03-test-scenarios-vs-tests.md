@@ -46,7 +46,7 @@
 
 ---
 
-### TS-02 원자성: AuthError 저장 + Recorded Outbox
+### TS-02 원자성: AuthError 저장과 Recorded Outbox는 함께 커밋된다
 - 상태: ❌ MISSING
 - 현재 검증 내용:
     - 도메인 저장과 outbox enqueue의 트랜잭션 결합 검증 없음
@@ -57,7 +57,7 @@
 
 ---
 
-### TS-03 / TS-04 Outbox 멱등성 (recorded / analysis_requested)
+### TS-03 Outbox 멱등성: recorded 이벤트는 authErrorId 기준으로 1회만 생성된다
 - 상태: ❌ MISSING
 - 현재 검증 내용:
     - idempotencyKey 형식/충돌 방지에 대한 테스트 없음
@@ -69,40 +69,62 @@
 
 ---
 
-### TS-05 Outbox Claim 동시성 제어
+### TS-04 Outbox 멱등성: analysis_requested 이벤트도 authErrorId 기준으로 1회만 생성된다
 - 상태: ❌ MISSING
 - 현재 검증 내용:
-    - 다중 poller 환경에서 단일 claim 보장 테스트 없음
+    - analysis_requested 이벤트의 중복 생성 방지 테스트 없음
 - 누락된 핵심:
-    - FOR UPDATE SKIP LOCKED 기반 단일 owner 확보
+    - authErrorId 기반 idempotencyKey 강제
 - 위험:
-    - 중복 publish / 이중 처리 가능성
+    - 분석 요청 중복 발생으로 인한 리소스 낭비 및 데이터 정합성 문제
 
 ---
 
-### TS-06 Outbox Finalize: owner 일치 조건
+### TS-05 Recorded Handler 동작 제한: ANALYSIS_REQUESTED 상태에서는 재요청하지 않는다
 - 상태: ❌ MISSING
 - 현재 검증 내용:
-    - processing_owner 불일치 시 finalize 차단 테스트 없음
+    - 이미 진행된 상태에서의 중복 recorded 이벤트 처리 방지 테스트 없음
 - 누락된 핵심:
-    - owner mismatch에 대한 무효 처리
+    - 상태 기반의 처리 skip 로직
 - 위험:
-    - 잘못된 finalize로 상태 전이 오염 가능
+    - 불필요한 재처리 및 상태 롤백/오염 가능성
 
 ---
 
-### TS-07 Reaper Takeover
+### TS-06 Decision 적용 제한: ANALYSIS_COMPLETED 상태에서만 허용된다
 - 상태: ❌ MISSING
 - 현재 검증 내용:
-    - stale PROCESSING row takeover 테스트 없음
+    - 올바르지 않은 상태에서의 Decision 적용 차단 테스트 없음
 - 누락된 핵심:
-    - takeover 조건과 이후 상태 전이의 합법성
+    - 상태 전이의 전제 조건 검증
 - 위험:
-    - PROCESSING 영구 정체 또는 잘못된 재큐잉
+    - 분석이 완료되지 않은 상태에서 잘못된 의사결정 적용
 
 ---
 
-### TS-08 Consumer 멱등성: processed_message
+### TS-07 Analysis 요청의 원자성: 상태 전이와 Outbox 생성은 함께 이뤄진다
+- 상태: ❌ MISSING
+- 현재 검증 내용:
+    - 상태 변경과 이벤트 발행의 트랜잭션 원자성 테스트 없음
+- 누락된 핵심:
+    - 상태만 변경되고 이벤트가 발행되지 않는 불일치 방지
+- 위험:
+    - 시스템 상태와 실제 이벤트 흐름 간의 괴리 발생
+
+---
+
+### TS-08 Outbox publish 실패 처리: retry와 dead 분기
+- 상태: ❌ MISSING
+- 현재 검증 내용:
+    - publish 예외 종류에 따른 분기 처리 테스트 없음
+- 누락된 핵심:
+    - retry 가능/불가능 예외 구분 및 DEAD 처리
+- 위험:
+    - 일시적 오류로 인한 메시지 유실 또는 영구적 오류의 무한 재시도
+
+---
+
+### TS-09 Consumer 멱등성: processed_message는 outbox_id 기준 1건만 존재한다
 - 상태: ⚠️ PARTIAL
 - 매칭 테스트:
     - AuthErrorPipelineFailureIntegrationTest#파이프라인_중복_수신_시_멱등성_보장_확인
@@ -118,18 +140,7 @@
 
 ---
 
-### TS-09 Lease 만료 후 재claim
-- 상태: ❌ MISSING
-- 현재 검증 내용:
-    - lease_until 만료/재claim 시나리오 없음
-- 누락된 핵심:
-    - lease 기반 배타 처리 경계
-- 위험:
-    - 동일 outbox 메시지 이중 처리
-
----
-
-### TS-10 Retry 기준: next_retry_at
+### TS-10 Retry 기준: DB next_retry_at 단일 기준
 - 상태: ❌ MISSING
 - 현재 검증 내용:
     - DB next_retry_at 기준 claim 차단 테스트 없음
@@ -140,7 +151,7 @@
 
 ---
 
-### TS-11 Missing Header → DLQ
+### TS-11 계약 위반 메시지: missing header는 즉시 DLQ + 무부작용
 - 상태: ❌ MISSING
 - 현재 검증 내용:
     - 계약 위반 메시지 즉시 DLQ 테스트 없음
@@ -151,7 +162,18 @@
 
 ---
 
-### TS-12 Terminal 상태 skip
+### TS-12 Payload 파싱 실패: poison message는 즉시 DLQ
+- 상태: ❌ MISSING
+- 현재 검증 내용:
+    - 파싱 불가 메시지에 대한 DLQ 처리 테스트 없음
+- 누락된 핵심:
+    - 비즈니스 로직 진입 전 차단 및 DLQ 이동
+- 위험:
+    - 파싱 오류로 인한 컨슈머 무한 재시도 루프
+
+---
+
+### TS-13 Terminal 상태 보호: terminal AuthError는 재처리되지 않는다
 - 상태: ❌ MISSING
 - 현재 검증 내용:
     - terminal 상태에서 out-of-order 이벤트 무시 테스트 없음
@@ -159,17 +181,6 @@
     - 상태 불변성 보장
 - 위험:
     - 이미 종료된 AuthError가 다시 변형됨
-
----
-
-### TS-13 Cluster linking 멱등성
-- 상태: ❌ MISSING
-- 현재 검증 내용:
-    - cluster_item 단일 링크 보장 테스트 없음
-- 누락된 핵심:
-    - 중복 analysis 결과에 대한 안전성
-- 위험:
-    - cluster count 부풀림, 분석 결과 왜곡
 
 ---
 
@@ -188,14 +199,15 @@
 - TS-01 (API 멱등성)
 - TS-02 (원자성)
 - TS-03/04 (Outbox 멱등성)
-- TS-08 (processed_message 멱등성 보강)
+- TS-09 (processed_message 멱등성 보강)
 
 ### 옵션 B. 메시징 안정성 중심
-- TS-05 / TS-06 / TS-07
-- TS-10 / TS-11
+- TS-08 (Publish 실패 처리)
+- TS-10 / TS-11 / TS-12 (Retry 및 DLQ)
 
 ### 옵션 C. 운영/관측 중심
-- TS-12 / TS-13
+- TS-05 / TS-06 / TS-07 (상태 전이 및 원자성)
+- TS-13 (Terminal 보호)
 
 ---
 
