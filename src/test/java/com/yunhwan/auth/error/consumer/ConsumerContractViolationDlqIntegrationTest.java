@@ -15,6 +15,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import java.time.Duration;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Objects;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -82,7 +83,9 @@ class ConsumerContractViolationDlqIntegrationTest extends AbstractStubIntegratio
     }
 
     private long count(String table) {
-        return jdbcTemplate.queryForObject("select count(*) from " + table, Long.class);
+        return Objects.requireNonNull(
+                jdbcTemplate.queryForObject("select count(*) from " + table, Long.class)
+        );
     }
 
     private void purgeQueue(String queue) {

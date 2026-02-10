@@ -23,7 +23,7 @@ import static org.assertj.core.api.AssertionsForClassTypes.assertThat;
  * 1. 메시지 적재: 요청 시 DB에 PENDING 상태로 정상 저장되어야 함.
  * 2. 멱등성 보장: 동일한 멱등성 키(Idempotency Key)로 중복 요청 시, 새로운 데이터를 생성하지 않고 기존 데이터를 반환해야 함.
  */
-@DisplayName("Outbox Writer 통합 테스트")
+@DisplayName("[TS-03] [TS-04] Outbox Writer 통합 테스트")
 class OutboxWriterIntegrationTest extends AbstractStubIntegrationTest {
 
     @Autowired

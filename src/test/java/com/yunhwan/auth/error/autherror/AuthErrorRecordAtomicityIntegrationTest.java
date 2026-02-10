@@ -23,7 +23,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.doThrow;
 
-@DisplayName("AuthError 기록 원자성 통합 테스트")
+@DisplayName("[TS-02] AuthError 기록 원자성 통합 테스트")
 class AuthErrorRecordAtomicityIntegrationTest extends AbstractIntegrationTest {
 
     private static final String RECORDED_EVENT_TYPE = "auth.error.recorded.v1";
