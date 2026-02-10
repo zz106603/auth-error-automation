@@ -86,7 +86,6 @@ public class AuthErrorRecordedConsumer {
             payloadParser.parse(payload, outboxId);
         } catch (Exception e) {
             log.warn("[AuthErrorConsumer] invalid payload -> reject(DLQ). outboxId={}, err={}", outboxId, e.getMessage());
-            sendToDlq(payload, message);
             channel.basicReject(tag, false);
             return;
         }
@@ -189,19 +188,6 @@ public class AuthErrorRecordedConsumer {
 
                 return msg;
             }
-        );
-    }
-
-    private void sendToDlq(String payload, Message original) {
-        rabbitTemplate.convertAndSend(
-                "",
-                RabbitTopologyConfig.DLQ_RECORDED,
-                payload,
-                msg -> {
-                    MessageProperties p = msg.getMessageProperties();
-                    p.getHeaders().putAll(original.getMessageProperties().getHeaders());
-                    return msg;
-                }
         );
     }
 }
