@@ -14,7 +14,7 @@ import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-@DisplayName("AuthError API 멱등성 통합 테스트")
+@DisplayName("[TS-01] AuthError API 멱등성 통합 테스트")
 class AuthErrorIdempotencyIntegrationTest extends AbstractIntegrationTest {
 
     @Autowired

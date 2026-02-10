@@ -18,6 +18,7 @@ import java.time.Duration;
 import java.time.OffsetDateTime;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Objects;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -102,17 +103,19 @@ class ConsumerPayloadPoisonDlqIntegrationTest extends AbstractStubIntegrationTes
     }
 
     private long insertAuthError(String requestId) {
-        return jdbcTemplate.queryForObject(
+        return Objects.requireNonNull(jdbcTemplate.queryForObject(
                 "insert into auth_error (request_id, source_service, environment) values (?, ?, ?) returning id",
                 Long.class,
                 requestId,
                 "test-service",
                 "test"
-        );
+        ));
     }
 
     private long count(String table) {
-        return jdbcTemplate.queryForObject("select count(*) from " + table, Long.class);
+        return Objects.requireNonNull(
+                jdbcTemplate.queryForObject("select count(*) from " + table, Long.class)
+        );
     }
 
     private void drainDlqIfPresent() {
