@@ -4,6 +4,8 @@ import org.springframework.amqp.core.MessagePostProcessor;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.stereotype.Component;
 
+import java.util.Map;
+
 @Component
 public class DuplicateDeliveryInjector {
 
@@ -30,6 +32,18 @@ public class DuplicateDeliveryInjector {
             props.setHeader("outboxId", outboxId);
             props.setHeader("eventType", eventType);
             props.setHeader("aggregateType", aggregateType);
+            return msg;
+        };
+
+        rabbitTemplate.convertAndSend(exchange, routingKey, payload, mpp);
+    }
+
+    public void sendWithHeaders(String exchange, String routingKey, String payload, Map<String, Object> headers) {
+        MessagePostProcessor mpp = msg -> {
+            var props = msg.getMessageProperties();
+            if (headers != null) {
+                props.getHeaders().putAll(headers);
+            }
             return msg;
         };
 
