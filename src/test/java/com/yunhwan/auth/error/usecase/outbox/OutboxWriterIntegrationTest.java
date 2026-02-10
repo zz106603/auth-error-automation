@@ -1,13 +1,18 @@
 package com.yunhwan.auth.error.usecase.outbox;
 
 import com.yunhwan.auth.error.domain.outbox.OutboxStatus;
-import com.yunhwan.auth.error.domain.outbox.descriptor.OutboxEventDescriptor;
+import com.yunhwan.auth.error.infra.autherror.outbox.AuthErrorAnalysisRequestedEventDescriptor;
+import com.yunhwan.auth.error.infra.autherror.outbox.AuthErrorRecordedEventDescriptor;
 import com.yunhwan.auth.error.testsupport.base.AbstractStubIntegrationTest;
+import com.yunhwan.auth.error.usecase.autherror.dto.AuthErrorAnalysisRequestedPayload;
+import com.yunhwan.auth.error.usecase.autherror.dto.AuthErrorRecordedPayload;
 import com.yunhwan.auth.error.usecase.outbox.port.OutboxMessageStore;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.jdbc.core.JdbcTemplate;
 
+import java.time.OffsetDateTime;
 import java.util.UUID;
 
 import static org.assertj.core.api.AssertionsForClassTypes.assertThat;
@@ -27,18 +32,28 @@ class OutboxWriterIntegrationTest extends AbstractStubIntegrationTest {
     @Autowired
     OutboxMessageStore outboxMessageStore;
 
+    @Autowired
+    AuthErrorRecordedEventDescriptor authErrorRecordedEventDescriptor;
+
+    @Autowired
+    AuthErrorAnalysisRequestedEventDescriptor authErrorAnalysisRequestedEventDescriptor;
+
+    @Autowired
+    JdbcTemplate jdbcTemplate;
+
     @Test
-    @DisplayName("메시지 적재 요청 시 DB에 정상적으로 저장된다")
+    @DisplayName("[TS-03] 메시지 적재 요청 시 DB에 정상적으로 저장된다")
     void 메시지_적재_요청_시_DB에_정상적으로_저장된다() {
         // Given: 테스트용 데이터 준비
-        String reqId = "REQ-1-" + UUID.randomUUID();
-        String aggregateId = newTestScope() + "-" + reqId;
+        long authErrorId = Math.abs(UUID.randomUUID().getMostSignificantBits());
+        String requestId = "REQ-1-" + UUID.randomUUID();
+        OffsetDateTime occurredAt = OffsetDateTime.now();
+        String aggregateId = String.valueOf(authErrorId);
 
-        OutboxEventDescriptor<TestPayload> descriptor = testDescriptor("AUTH_ERROR", "AUTH_ERROR_DETECTED_V1");
-        TestPayload payload = new TestPayload("hello", "world");
+        AuthErrorRecordedPayload payload = new AuthErrorRecordedPayload(authErrorId, requestId, occurredAt);
 
         // When: 메시지 적재 요청
-        var saved = outboxWriter.enqueue(descriptor, aggregateId, payload);
+        var saved = outboxWriter.enqueue(authErrorRecordedEventDescriptor, aggregateId, payload);
 
         // Then: 저장된 메시지 검증
         assertThat(saved.getId())
@@ -46,7 +61,7 @@ class OutboxWriterIntegrationTest extends AbstractStubIntegrationTest {
                 .isNotNull();
 
         // DB에서 조회하여 상태 확인
-        String idemKey = descriptor.idempotencyKey(payload);
+        String idemKey = authErrorRecordedEventDescriptor.idempotencyKey(payload);
         var found = outboxMessageStore.findByIdempotencyKey(idemKey);
 
         assertThat(found)
@@ -55,21 +70,24 @@ class OutboxWriterIntegrationTest extends AbstractStubIntegrationTest {
         assertThat(found.get().getStatus())
                 .withFailMessage("초기 상태는 PENDING이어야 합니다.")
                 .isEqualTo(OutboxStatus.PENDING);
+        assertThat(found.get().getIdempotencyKey())
+                .withFailMessage("멱등성 키는 정책 형식(auth_error:recorded:{authErrorId})이어야 합니다.")
+                .isEqualTo("auth_error:recorded:" + authErrorId);
     }
 
     @Test
-    @DisplayName("동일한 멱등성 키로 중복 요청 시 새로운 로우를 생성하지 않고 기존 메시지를 반환한다")
+    @DisplayName("[TS-03] 동일한 멱등성 키로 중복 요청 시 새로운 로우를 생성하지 않고 기존 메시지를 반환한다")
     void 동일한_멱등성_키로_중복_요청_시_새로운_로우를_생성하지_않고_기존_메시지를_반환한다() {
         // Given: 테스트용 데이터 준비
-        String reqId = "REQ-2-" + UUID.randomUUID();
-        String aggregateId = newTestScope() + "-" + reqId;
-
-        OutboxEventDescriptor<TestPayload> descriptor = testDescriptor("AUTH_ERROR", "AUTH_ERROR_DETECTED_V1");
-        TestPayload payload = new TestPayload("x", "1");
+        long authErrorId = Math.abs(UUID.randomUUID().getMostSignificantBits());
+        String requestId = "REQ-2-" + UUID.randomUUID();
+        OffsetDateTime occurredAt = OffsetDateTime.now();
+        String aggregateId = String.valueOf(authErrorId);
+        AuthErrorRecordedPayload payload = new AuthErrorRecordedPayload(authErrorId, requestId, occurredAt);
 
         // When: 동일한 데이터로 두 번 적재 요청
-        var first = outboxWriter.enqueue(descriptor, aggregateId, payload);
-        var second = outboxWriter.enqueue(descriptor, aggregateId, payload);
+        var first = outboxWriter.enqueue(authErrorRecordedEventDescriptor, aggregateId, payload);
+        var second = outboxWriter.enqueue(authErrorRecordedEventDescriptor, aggregateId, payload);
 
         // Then: 두 번째 요청 결과는 첫 번째와 동일한 ID를 가져야 함 (중복 생성 방지)
         assertThat(second.getId())
@@ -77,39 +95,58 @@ class OutboxWriterIntegrationTest extends AbstractStubIntegrationTest {
                 .isEqualTo(first.getId());
 
         // Then: DB 조회 시에도 해당 ID로 조회되어야 함
-        String idemKey = descriptor.idempotencyKey(payload);
+        String idemKey = authErrorRecordedEventDescriptor.idempotencyKey(payload);
         var found = outboxMessageStore.findByIdempotencyKey(idemKey);
 
         assertThat(found).isPresent();
         assertThat(found.get().getId())
                 .withFailMessage("DB에 저장된 ID도 반환된 ID와 일치해야 합니다.")
                 .isEqualTo(first.getId());
+        assertThat(countByIdempotencyKey(idemKey))
+                .withFailMessage("멱등성 키 기준으로 outbox_message는 1건만 존재해야 합니다.")
+                .isEqualTo(1L);
     }
 
-    /**
-     * 테스트용 Descriptor 생성 헬퍼 메서드.
-     * <p>
-     * 테스트 목적상 Idempotency Key는 "aggregateType:eventType:payloadKey:payloadValue" 조합으로 단순화하여 생성한다.
-     */
-    private OutboxEventDescriptor<TestPayload> testDescriptor(String aggregateType, String eventType) {
-        return new OutboxEventDescriptor<>() {
-            @Override
-            public String aggregateType() {
-                return aggregateType;
-            }
+    @Test
+    @DisplayName("[TS-04] analysis_requested 이벤트도 authErrorId 기준 멱등키로 1건만 저장된다")
+    void analysis_requested_멱등성_키_및_단일_로우_보장() {
+        long authErrorId = Math.abs(UUID.randomUUID().getMostSignificantBits());
+        String requestId = "REQ-3-" + UUID.randomUUID();
+        OffsetDateTime occurredAt = OffsetDateTime.now();
+        OffsetDateTime requestedAt = occurredAt.plusSeconds(1);
+        String aggregateId = String.valueOf(authErrorId);
 
-            @Override
-            public String eventType() {
-                return eventType;
-            }
+        AuthErrorAnalysisRequestedPayload payload = new AuthErrorAnalysisRequestedPayload(
+                authErrorId, requestId, occurredAt, requestedAt
+        );
 
-            @Override
-            public String idempotencyKey(TestPayload payload) {
-                // 테스트에서는 "payload 내용"만 같으면 같은 키가 되도록 단순화
-                return aggregateType + ":" + eventType + ":" + payload.k() + ":" + payload.v();
-            }
-        };
+        var first = outboxWriter.enqueue(authErrorAnalysisRequestedEventDescriptor, aggregateId, payload);
+        var second = outboxWriter.enqueue(authErrorAnalysisRequestedEventDescriptor, aggregateId, payload);
+
+        assertThat(second.getId())
+                .withFailMessage("중복 요청 시 동일한 ID가 반환되어야 합니다.")
+                .isEqualTo(first.getId());
+
+        String idemKey = authErrorAnalysisRequestedEventDescriptor.idempotencyKey(payload);
+        var found = outboxMessageStore.findByIdempotencyKey(idemKey);
+        assertThat(found)
+                .withFailMessage("멱등성 키로 메시지가 조회되어야 합니다.")
+                .isPresent();
+        assertThat(found.get().getIdempotencyKey())
+                .withFailMessage("멱등성 키는 정책 형식(auth_error:analysis_requested:{authErrorId})이어야 합니다.")
+                .isEqualTo("auth_error:analysis_requested:" + authErrorId);
+
+        assertThat(countByIdempotencyKey(idemKey))
+                .withFailMessage("멱등성 키 기준으로 outbox_message는 1건만 존재해야 합니다.")
+                .isEqualTo(1L);
     }
 
-    private record TestPayload(String k, String v) {}
+    private long countByIdempotencyKey(String idempotencyKey) {
+        Long count = jdbcTemplate.queryForObject(
+                "select count(*) from outbox_message where idempotency_key = ?",
+                Long.class,
+                idempotencyKey
+        );
+        return count == null ? 0L : count;
+    }
 }

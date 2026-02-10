@@ -19,6 +19,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.jdbc.core.JdbcTemplate;
 
 import java.time.Duration;
 import java.time.OffsetDateTime;
@@ -52,6 +53,8 @@ class AuthErrorPipelineFailureIntegrationTest extends AbstractIntegrationTest {
     ProcessedMessageStore processedMessageStore;
     @Autowired
     AuthErrorStore authErrorStore;
+    @Autowired
+    JdbcTemplate jdbcTemplate;
 
     // 테스트 시나리오를 위해 각 단계(Recorded, Analysis)별로 실패를 주입할 수 있는 빈
     @Autowired
@@ -68,6 +71,12 @@ class AuthErrorPipelineFailureIntegrationTest extends AbstractIntegrationTest {
     void setUp() {
         dlqObserver.reset();
         processedMessageStore.deleteAll();
+        jdbcTemplate.update("delete from processed_message");
+        jdbcTemplate.update("delete from outbox_message");
+        jdbcTemplate.update("delete from auth_error_cluster_item");
+        jdbcTemplate.update("delete from auth_error_analysis_result");
+        jdbcTemplate.update("delete from auth_error_cluster");
+        jdbcTemplate.update("delete from auth_error");
 
         // 테스트 간 간섭 방지를 위해 실패 주입기 초기화
         recordedFailInjector.reset();
@@ -213,7 +222,7 @@ class AuthErrorPipelineFailureIntegrationTest extends AbstractIntegrationTest {
     }
 
     @Test
-    @DisplayName("Idempotency: 이미 처리 완료된(DONE) 메시지를 중복 수신할 경우 재처리하지 않아야 한다")
+    @DisplayName("[TS-09] Idempotency: 이미 처리 완료된(DONE) 메시지를 중복 수신할 경우 재처리하지 않아야 한다")
     void 파이프라인_중복_수신_시_멱등성_보장_확인() {
         // Given: 모든 단계가 정상 처리되도록 설정
         recordedFailInjector.reset();
@@ -299,6 +308,9 @@ class AuthErrorPipelineFailureIntegrationTest extends AbstractIntegrationTest {
                     assertThat(after.getRetryCount())
                             .withFailMessage("중복 메시지는 처리되지 않아야 하므로 재시도 횟수가 같아야 합니다.")
                             .isEqualTo(beforeRetryCount);
+                    assertThat(countProcessedMessageByOutboxId(analysisOutboxId))
+                            .withFailMessage("processed_message는 outbox_id 기준으로 1건만 존재해야 합니다.")
+                            .isEqualTo(1L);
                 });
     }
 
@@ -321,5 +333,14 @@ class AuthErrorPipelineFailureIntegrationTest extends AbstractIntegrationTest {
                 null,
                 "stacktrace"
         );
+    }
+
+    private long countProcessedMessageByOutboxId(long outboxId) {
+        Long count = jdbcTemplate.queryForObject(
+                "select count(*) from processed_message where outbox_id = ?",
+                Long.class,
+                outboxId
+        );
+        return count == null ? 0L : count;
     }
 }
