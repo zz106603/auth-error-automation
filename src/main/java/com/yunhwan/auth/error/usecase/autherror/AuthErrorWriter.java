@@ -14,6 +14,7 @@ import com.yunhwan.auth.error.usecase.outbox.port.OutboxMessageStore;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -25,9 +26,6 @@ import java.time.OffsetDateTime;
 @Service
 @RequiredArgsConstructor
 public class AuthErrorWriter {
-
-    // PostgreSQL에서 unique 제약 위반에 해당하는 SQLSTATE.
-    private static final String SQLSTATE_UNIQUE_VIOLATION = "23505";
 
     private final AuthErrorStore authErrorStore;
     private final OutboxWriter outboxWriter;
@@ -105,10 +103,7 @@ public class AuthErrorWriter {
             eventLogger.recorded(saved, outbox.getId(), idemKey);
 
             return new AuthErrorWriteResult(saved.getId(), outbox.getId());
-        } catch (DataIntegrityViolationException e) {
-            if (dedupKey == null || !isUniqueViolation(e)) {
-                throw e;
-            }
+        } catch (DuplicateKeyException e) {
             return fetchExistingAfterConflict(dedupKey, e);
         }
     }
@@ -129,20 +124,5 @@ public class AuthErrorWriter {
         OutboxMessage outbox = outboxMessageStore.findByIdempotencyKey(idemKey)
                 .orElseThrow(() -> new IllegalStateException("recorded outbox missing for authErrorId=" + existing.getId()));
         return new AuthErrorWriteResult(existing.getId(), outbox.getId());
-    }
-
-    /**
-     * "중복 키"만 멱등 충돌로 간주하기 위한 방어 로직.
-     */
-    private boolean isUniqueViolation(DataIntegrityViolationException e) {
-        Throwable t = e;
-        while (t != null) {
-            if (t instanceof SQLException sqlEx) {
-                String sqlState = sqlEx.getSQLState();
-                return SQLSTATE_UNIQUE_VIOLATION.equals(sqlState);
-            }
-            t = t.getCause();
-        }
-        return false;
     }
 }
