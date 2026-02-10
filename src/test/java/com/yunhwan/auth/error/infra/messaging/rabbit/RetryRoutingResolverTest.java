@@ -1,6 +1,7 @@
 package com.yunhwan.auth.error.infra.messaging.rabbit;
 
 import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
@@ -16,6 +17,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * 10초(10s), 1분(1m), 10분(10m) 대기 큐 중 어디로 라우팅될지 결정한다.
  * 또한, 이벤트 타입(Recorded, AnalysisRequested)에 따라 적절한 Exchange를 반환하는지도 확인한다.
  */
+@Tag("unit")
 class RetryRoutingResolverTest {
 
     // 테스트를 위한 설정값 주입: fastMax=1, mediumMax=1

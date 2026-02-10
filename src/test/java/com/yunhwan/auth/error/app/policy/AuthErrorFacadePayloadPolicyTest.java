@@ -3,6 +3,7 @@ package com.yunhwan.auth.error.app.policy;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.yunhwan.auth.error.testsupport.base.AbstractStubIntegrationTest;
 import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.ApplicationContext;
@@ -16,7 +17,9 @@ import java.util.*;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.fail;
 
-@DisplayName("AuthError payload policy 통합 테스트")
+@Tag("policy")
+@Tag("non-scenario")
+@DisplayName("[Policy] AuthError payload size and sanitization rules")
 class AuthErrorFacadePayloadPolicyTest extends AbstractStubIntegrationTest {
 
     private static final int MAX_STACKTRACE_LEN = 8_000;
@@ -70,8 +73,7 @@ class AuthErrorFacadePayloadPolicyTest extends AbstractStubIntegrationTest {
     }
 
     /**
-     * EN: call "record-like" flow via reflection.
-     * KR: facade/writer/service의 record 계열 메서드를 reflection으로 호출.
+     * facade/writer/service의 record 계열 메서드를 reflection으로 호출.
      */
     private void invokeRecordLikeFlow(String requestId, String exceptionClass, String message, String stacktrace) {
         Object recorder = findFirstBeanBySimpleClassName(
@@ -107,9 +109,7 @@ class AuthErrorFacadePayloadPolicyTest extends AbstractStubIntegrationTest {
     }
 
     /**
-     * EN: Prefer non-Request param type methods (service/facade commands) if available.
-     * KR: Controller의 *Request DTO* 파라미터 메서드는 후순위로 밀고,
-     *     가능하면 usecase command 계열을 먼저 선택한다.
+     * Controller의 *Request DTO* 파라미터 메서드는 후순위로 밀고, 가능하면 usecase command 계열을 먼저 선택한다.
      */
     private Method findBestRecordLikeMethod(Class<?> type, String... methodNames) {
         List<Method> candidates = new ArrayList<>();
