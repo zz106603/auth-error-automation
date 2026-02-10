@@ -26,7 +26,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * 1. 발행 성공 시: 상태가 PUBLISHED로 변경되어야 함.
  * 2. 발행 실패 시: 상태가 PENDING으로 유지되고, 재시도 횟수 증가 및 다음 재시도 시간이 설정되어야 함.
  */
-@DisplayName("Outbox Processor 통합 테스트")
+@DisplayName("[TS-08] Outbox publish 실패 처리 통합 테스트")
 class OutboxProcessingIntegrationTest extends AbstractStubIntegrationTest {
 
     @Autowired
@@ -43,7 +43,7 @@ class OutboxProcessingIntegrationTest extends AbstractStubIntegrationTest {
     OutboxFixtures fixtures;
 
     @Test
-    @DisplayName("메시지 발행 성공 시 상태를 PUBLISHED로 변경한다")
+    @DisplayName("[TS-08] 발행 성공 시 outbox 상태는 PUBLISHED로 전환된다")
     void 메시지_발행_성공_시_상태를_PUBLISHED로_변경한다() {
         // Given: 테스트용 PENDING 메시지 생성
         String scope = newTestScope();
@@ -66,14 +66,14 @@ class OutboxProcessingIntegrationTest extends AbstractStubIntegrationTest {
     }
 
     @Test
-    @DisplayName("메시지 발행 실패 시 재시도를 위해 상태를 PENDING으로 변경하고 재시도 정보를 업데이트한다")
-    void 메시지_발행_실패_시_재시도를_위해_상태를_PENDING으로_변경하고_재시도_정보를_업데이트한다() {
+    @DisplayName("[TS-08] retryable 발행 실패는 재시도 전제 PENDING + retry 정보 갱신")
+    void retryable_예외_발생_시_재시도를_위해_상태를_PENDING으로_변경하고_재시도_정보를_업데이트한다() {
         // Given: 테스트용 PENDING 메시지 생성
         String scope = newTestScope();
         OutboxMessage m = fixtures.createAuthErrorMessage(scope, "REQ-FAIL" + UUID.randomUUID(), "{\"val\":\"fail\"}");
 
-        // Publisher가 실패(예외 발생)하도록 설정
-        testPublisher.failNext(true);
+        // Publisher가 retryable 실패(예외 발생)하도록 설정
+        testPublisher.failNextRetryable();
 
         // When: 메시지 폴링(Claim) 및 처리(Process)
         OutboxClaimResult result = poller.pollOnce(scope);
@@ -102,6 +102,47 @@ class OutboxProcessingIntegrationTest extends AbstractStubIntegrationTest {
                 .isAfter(OffsetDateTime.now(clock));
         
         // 4. 에러 메시지가 기록되어야 함
+        assertThat(msg.getLastError())
+                .withFailMessage("에러 메시지가 기록되어야 합니다.")
+                .contains("Test exception");
+    }
+
+    @Test
+    @DisplayName("[TS-08] non-retryable 발행 실패는 즉시 DEAD로 전환된다")
+    void non_retryable_예외_발생_시_즉시_DEAD로_전환한다() {
+        // Given: 테스트용 PENDING 메시지 생성
+        String scope = newTestScope();
+        OutboxMessage m = fixtures.createAuthErrorMessage(scope, "REQ-NON-RETRY" + UUID.randomUUID(), "{\"val\":\"dead\"}");
+
+        // Publisher가 non-retryable 실패하도록 설정
+        testPublisher.failNextNonRetryable();
+
+        // When: 메시지 폴링(Claim) 및 처리(Process)
+        OutboxClaimResult result = poller.pollOnce(scope);
+        List<OutboxMessage> claimed = result.claimed();
+        processor.process(result.owner(), claimed);
+
+        // Then: 메시지 상태 및 재시도 정보 확인
+        Optional<OutboxMessage> reloaded = outboxMessageStore.findById(m.getId());
+        assertThat(reloaded).isPresent();
+
+        OutboxMessage msg = reloaded.get();
+
+        assertThat(msg.getStatus())
+                .withFailMessage("non-retryable 실패 시 상태는 DEAD여야 합니다.")
+                .isEqualTo(OutboxStatus.DEAD);
+
+        assertThat(msg.getNextRetryAt())
+                .withFailMessage("DEAD 상태에서는 next_retry_at이 없어야 합니다.")
+                .isNull();
+
+        assertThat(msg.getProcessingOwner())
+                .withFailMessage("DEAD 상태에서는 Processing Owner가 없어야 합니다.")
+                .isNull();
+        assertThat(msg.getProcessingStartedAt())
+                .withFailMessage("DEAD 상태에서는 Processing Started At이 없어야 합니다.")
+                .isNull();
+
         assertThat(msg.getLastError())
                 .withFailMessage("에러 메시지가 기록되어야 합니다.")
                 .contains("Test exception");

@@ -26,7 +26,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * 1. 재시도 지연(Backoff): 실패 후 다음 재시도 시간까지는 폴링되지 않아야 함.
  * 2. DEAD 전환: 최대 재시도 횟수(Max Retries)에 도달하면 DEAD 상태로 변경되어야 함.
  */
-@DisplayName("Outbox 재시도/DEAD 경계 통합 테스트")
+@DisplayName("[TS-08] Outbox 재시도/DEAD 정책 통합 테스트")
 class OutboxRetryPolicyIntegrationTest extends AbstractStubIntegrationTest {
 
     @Autowired
@@ -47,14 +47,14 @@ class OutboxRetryPolicyIntegrationTest extends AbstractStubIntegrationTest {
     OutboxProperties outboxProperties;
 
     @Test
-    @DisplayName("발행 실패 후 재시도 시간이 미래인 경우 즉시 재폴링되지 않고 시간이 지나야 재처리된다")
+    @DisplayName("[TS-08] 재시도 시간 전에는 재폴링 금지, 시간이 지나야 재처리된다")
     void 발행_실패_후_재시도_지연_및_재처리_확인() {
         // Given: 테스트용 메시지 생성
         String scope = newTestScope();
         OutboxMessage m = fixtures.createAuthErrorMessage(scope, "REQ-RETRY" + UUID.randomUUID(), "{\"val\":\"fail-once\"}");
 
         // 1) 첫 번째 발행은 실패하도록 설정
-        testPublisher.failNext(true);
+        testPublisher.failNextRetryable();
 
         // When: 1차 폴링 및 처리 (실패 발생)
         OutboxClaimResult result = poller.pollOnce(scope);
@@ -110,7 +110,7 @@ class OutboxRetryPolicyIntegrationTest extends AbstractStubIntegrationTest {
     }
 
     @Test
-    @DisplayName("최대 재시도 횟수에 도달하면 DEAD 상태로 전환된다")
+    @DisplayName("[TS-08] 최대 재시도 횟수 도달 시 DEAD로 전환된다")
     void 최대_재시도_횟수_도달_시_DEAD_전환_확인() {
         // Given: 테스트용 메시지 생성
         String scope = newTestScope();
@@ -126,7 +126,7 @@ class OutboxRetryPolicyIntegrationTest extends AbstractStubIntegrationTest {
         );
 
         // 발행 실패 설정
-        testPublisher.failNext(true);
+        testPublisher.failNextRetryable();
 
         // When: 폴링 및 처리 (마지막 실패 발생)
         OutboxClaimResult result = poller.pollOnce(scope);
