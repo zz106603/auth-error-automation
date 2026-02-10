@@ -8,6 +8,7 @@ import com.yunhwan.auth.error.infra.messaging.rabbit.RetryRoutingResolver;
 import com.yunhwan.auth.error.infra.support.HeaderUtils;
 import com.yunhwan.auth.error.usecase.consumer.ConsumerDecisionMaker;
 import com.yunhwan.auth.error.usecase.consumer.handler.AuthErrorHandler;
+import com.yunhwan.auth.error.usecase.consumer.port.AuthErrorPayloadParser;
 import com.yunhwan.auth.error.usecase.consumer.port.ProcessedMessageStore;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -36,19 +37,22 @@ public class AuthErrorRecordedConsumer {
     private final ProcessedMessageStore processedMessageStore;
     private final ConsumerDecisionMaker decisionMaker;
     private final RetryRoutingResolver retryRoutingResolver;
+    private final AuthErrorPayloadParser payloadParser;
 
     public AuthErrorRecordedConsumer(
             RabbitTemplate rabbitTemplate,
             @Qualifier("authErrorRecordedHandler") AuthErrorHandler handler,
             ProcessedMessageStore processedMessageStore,
             ConsumerDecisionMaker decisionMaker,
-            RetryRoutingResolver retryRoutingResolver
+            RetryRoutingResolver retryRoutingResolver,
+            AuthErrorPayloadParser payloadParser
     ) {
         this.rabbitTemplate = rabbitTemplate;
         this.handler = handler;
         this.processedMessageStore = processedMessageStore;
         this.decisionMaker = decisionMaker;
         this.retryRoutingResolver = retryRoutingResolver;
+        this.payloadParser = payloadParser;
     }
 
     @RabbitListener(queues = RabbitTopologyConfig.Q_RECORDED)
@@ -73,6 +77,16 @@ public class AuthErrorRecordedConsumer {
         if (eventType == null || aggregateType == null) {
             log.warn("[AuthErrorConsumer] missing headers -> reject(DLQ). outboxId={}, eventType={}, aggregateType={}",
                     outboxId, eventType, aggregateType);
+            channel.basicReject(tag, false);
+            return;
+        }
+
+        // 1.5) payload 파싱 실패는 즉시 DLQ (부작용 없이)
+        try {
+            payloadParser.parse(payload, outboxId);
+        } catch (Exception e) {
+            log.warn("[AuthErrorConsumer] invalid payload -> reject(DLQ). outboxId={}, err={}", outboxId, e.getMessage());
+            sendToDlq(payload, message);
             channel.basicReject(tag, false);
             return;
         }
@@ -171,8 +185,21 @@ public class AuthErrorRecordedConsumer {
                     }
                     if (decision.nextRetryAt() != null) {
                         p.setHeader("x-next-retry-at", decision.nextRetryAt().toString());
-                    }
+                }
 
+                return msg;
+            }
+        );
+    }
+
+    private void sendToDlq(String payload, Message original) {
+        rabbitTemplate.convertAndSend(
+                "",
+                RabbitTopologyConfig.DLQ_RECORDED,
+                payload,
+                msg -> {
+                    MessageProperties p = msg.getMessageProperties();
+                    p.getHeaders().putAll(original.getMessageProperties().getHeaders());
                     return msg;
                 }
         );
