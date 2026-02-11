@@ -255,4 +255,14 @@ slope 계산(운영 규칙):
 아래는 지표가 있으면 강력하지만, 현재 시스템에 없다면 ‘추가 구현’로 남긴다.
 
 - STOP if `connection_wait_p95 > 50ms` for 60s (DB connection wait histogram 필요)
-- STOP if `Unacked_age_p95 > 10s` f
+- STOP if `Unacked_age_p95 > 10s` for 60s (message age 측정 필요)
+- STOP if `Ready_age_p95 > 10s` for 60s (queue message age 측정 필요)
+
+---
+
+### 9.4 Failure Injection (LT-004) 전용 처리
+- attempt=3+ 비율 상승은 “기대 현상”일 수 있음 → 즉시 STOP 금지
+- 대신 아래만 STOP:
+  - DLQ로 가야 하는데 안 가는 경우(정책 미스)
+  - retry가 즉시 폭주(즉시 재시도)하며 TTL ladder가 무시되는 경우
+  - DLQ reason taxonomy가 UNKNOWN 일색인 경우(분류 실패)

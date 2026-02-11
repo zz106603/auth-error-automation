@@ -82,7 +82,7 @@ API latency만 빠른 상태는 성공이 아니다.
 - 비정상 메시지(헤더/페이로드 오류)는 즉시 DLQ
 - Decision = DEAD 시 DLQ 전송
 - Non-retryable 예외 또는 maxRetries 초과 시 DLQ
-- maxRetries 기본값: 10
+- maxRetries 기본값: 6
 
 
 ---
@@ -208,6 +208,7 @@ STOP if:
 
 STOP if:
 
+'분모가 0보다 클 때만 계산'
 - (ingest - publish) / ingest > 5% for 60s
 - (publish - consume) / publish > 5% for 60s
 - retry_enqueue_rate / consume_rate > 10% for 60s (non-failure runs)
