@@ -8,7 +8,12 @@ spring:
     password: ${DB_PASSWORD}
     driver-class-name: org.postgresql.Driver
     hikari:
-      maximum-pool-size: 10
+      maximum-pool-size: 16
+      minimum-idle: 8
+      connection-timeout: 2000
+      validation-timeout: 1000
+      idle-timeout: 600000
+      max-lifetime: 1800000
 
   rabbitmq:
     host: ${RABBIT_HOST}
@@ -26,17 +31,20 @@ spring:
         acknowledge-mode: manual
         default-requeue-rejected: false
         auto-startup: true # outbox/consumer 로직 완성 전에는 자동 소비 방지
+        concurrency: 4
+        max-concurrency: 4
+        prefetch: 25
 
 outbox:
   owner: ${POD_NAME:}
 
   poller:
-    batch-size: 50
-    fixed-delay-ms: 500
+    batch-size: 100
+    fixed-delay-ms: 200
 
   retry:
-    max-retries: 10
-    delay-seconds: 60
+    max-retries: 6
+    delay-seconds: 5
 
   reaper:
     stale-after-seconds: 300
@@ -47,18 +55,30 @@ management:
   endpoints:
     web:
       exposure:
-        include: health,info,beans
+        include: health,info,metrics,env,configprops,prometheus
   endpoint:
     health:
       show-details: always
+  metrics:
+    distribution:
+      percentiles-histogram:
+        http.server.requests: true
+      percentiles:
+        http.server.requests: 0.95,0.99
 
 auth-error:
   source-service: ${spring.application.name}
   environment: local
   rabbit:
     retry:
-      ttl10s: 2000
-      ttl1m: 5000
-      ttl10m: 10000
+      ttl10s: 5000
+      ttl1m: 30000
+      ttl10m: 60000
       fast-max: 2
       medium-max: 4
+
+logging:
+  level:
+    root: WARN
+    com.yunhwan.auth.error.infra.logging.AuthErrorEventLogger: INFO
+    com.yunhwan.auth.error.infra.messaging.consumer.listener: INFO

@@ -10,6 +10,19 @@ spring:
       hibernate:
         format_sql: true
 
+  # Optional but recommended safety baseline (avoid implicit framework defaults)
+  datasource:
+    hikari:
+      connection-timeout: 2000
+
+  rabbitmq:
+    listener:
+      simple:
+        acknowledge-mode: manual
+        default-requeue-rejected: false
+        concurrency: 4
+        max-concurrency: 4
+
 outbox:
   owner: ${POD_NAME:}
 
