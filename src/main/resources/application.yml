@@ -42,9 +42,9 @@ outbox:
 auth-error:
   rabbit:
     retry:
-      ttl10s: 10000
-      ttl1m: 60000
-      ttl10m: 600000
+      ttl-short: 10000
+      ttl-medium: 60000
+      ttl-long: 600000
       fast-max: 3
       medium-max: 6
   ops:

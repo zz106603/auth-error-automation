@@ -71,9 +71,9 @@ auth-error:
   environment: local
   rabbit:
     retry:
-      ttl10s: 5000
-      ttl1m: 30000
-      ttl10m: 60000
+      ttl-short: 5000
+      ttl-medium: 30000
+      ttl-long: 60000
       fast-max: 2
       medium-max: 4
 

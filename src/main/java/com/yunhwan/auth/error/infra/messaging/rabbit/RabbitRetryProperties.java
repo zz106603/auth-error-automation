@@ -14,9 +14,9 @@ public class RabbitRetryProperties {
     /**
      * retry queue TTL (ms)
      */
-    private int ttl10s = 10_000;
-    private int ttl1m  = 60_000;
-    private int ttl10m = 600_000;
+    private int ttlShort = 10_000;
+    private int ttlMedium  = 60_000;
+    private int ttlLong = 600_000;
 
     /**
      * ladder 기준
