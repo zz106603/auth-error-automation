@@ -124,7 +124,7 @@ public class RabbitTopologyConfig {
     @Bean
     public Queue recordedRetryQueue10s() {
         return QueueBuilder.durable(RETRY_Q_RECORDED_10S)
-                .withArgument("x-message-ttl", retryProps.getTtl10s())
+                .withArgument("x-message-ttl", retryProps.getTtlShort())
                 .withArgument("x-dead-letter-exchange", EXCHANGE)
                 .withArgument("x-dead-letter-routing-key", RK_RECORDED)
                 .build();
@@ -133,7 +133,7 @@ public class RabbitTopologyConfig {
     @Bean
     public Queue recordedRetryQueue1m() {
         return QueueBuilder.durable(RETRY_Q_RECORDED_1M)
-                .withArgument("x-message-ttl", retryProps.getTtl1m())
+                .withArgument("x-message-ttl", retryProps.getTtlMedium())
                 .withArgument("x-dead-letter-exchange", EXCHANGE)
                 .withArgument("x-dead-letter-routing-key", RK_RECORDED)
                 .build();
@@ -142,7 +142,7 @@ public class RabbitTopologyConfig {
     @Bean
     public Queue recordedRetryQueue10m() {
         return QueueBuilder.durable(RETRY_Q_RECORDED_10M)
-                .withArgument("x-message-ttl", retryProps.getTtl10m())
+                .withArgument("x-message-ttl", retryProps.getTtlLong())
                 .withArgument("x-dead-letter-exchange", EXCHANGE)
                 .withArgument("x-dead-letter-routing-key", RK_RECORDED)
                 .build();
@@ -152,7 +152,7 @@ public class RabbitTopologyConfig {
     @Bean
     public Queue analysisRetryQueue10s() {
         return QueueBuilder.durable(RETRY_Q_ANALYSIS_10S)
-                .withArgument("x-message-ttl", retryProps.getTtl10s())
+                .withArgument("x-message-ttl", retryProps.getTtlShort())
                 .withArgument("x-dead-letter-exchange", EXCHANGE)
                 .withArgument("x-dead-letter-routing-key", RK_ANALYSIS_REQUESTED)
                 .build();
@@ -161,7 +161,7 @@ public class RabbitTopologyConfig {
     @Bean
     public Queue analysisRetryQueue1m() {
         return QueueBuilder.durable(RETRY_Q_ANALYSIS_1M)
-                .withArgument("x-message-ttl", retryProps.getTtl1m())
+                .withArgument("x-message-ttl", retryProps.getTtlMedium())
                 .withArgument("x-dead-letter-exchange", EXCHANGE)
                 .withArgument("x-dead-letter-routing-key", RK_ANALYSIS_REQUESTED)
                 .build();
@@ -170,7 +170,7 @@ public class RabbitTopologyConfig {
     @Bean
     public Queue analysisRetryQueue10m() {
         return QueueBuilder.durable(RETRY_Q_ANALYSIS_10M)
-                .withArgument("x-message-ttl", retryProps.getTtl10m())
+                .withArgument("x-message-ttl", retryProps.getTtlLong())
                 .withArgument("x-dead-letter-exchange", EXCHANGE)
                 .withArgument("x-dead-letter-routing-key", RK_ANALYSIS_REQUESTED)
                 .build();

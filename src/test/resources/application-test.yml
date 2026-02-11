@@ -62,8 +62,8 @@ auth-error:
   environment: test
   rabbit:
     retry:
-      ttl10s: 1000
-      ttl1m: 1000
-      ttl10m: 1000
+      ttl-short: 1000
+      ttl-medium: 1000
+      ttl-long: 1000
       fast-max: 1
       medium-max: 1
