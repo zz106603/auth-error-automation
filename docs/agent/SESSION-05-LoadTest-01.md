@@ -178,3 +178,81 @@
     - 정량 stop conditions
 - [ ] Baseline 실행에 필요한 최소 쿼리/관측 경로가 준비됨
 - [ ] 다음 세션에서 바로 k6 스크립트로 진입 가능
+
+---
+
+## 9) Stop Conditions v2.1 (Baseline-aware, Single-Node Local)
+
+> 원칙:
+> - 절대값(예: 60s/2min) 단독 사용 금지 → Baseline 배수 + 추세(slope) + mismatch 로직으로 보강
+> - “가능한 지표”와 “추가 구현이 필요한 지표”를 분리
+> - Failure Injection(LT-004)에서는 일부 조건(예: attempt=3+ 상승)을 Stop이 아니라 “기대 현상”으로 취급
+
+### 9.1 Baseline 정의 (LT-001에서 산출)
+- baseline_E2E_p95
+- baseline_E2E_p99
+- baseline_outbox_age_p95
+- baseline_outbox_age_p99
+- baseline_ingest_rate (req/s)
+- baseline_publish_rate (msg/s)
+- baseline_consume_rate (ack/s)
+
+---
+
+### 9.2 즉시 적용 가능한 Stop Rules (추가 구현 없이 적용 가능)
+
+#### A) E2E Latency (가장 중요)
+- STOP if `E2E_p95 > baseline_E2E_p95 * 3` for 60s (LT-002~003)
+- STOP if `E2E_p99 > baseline_E2E_p99 * 5` for 60s (LT-002~003)
+- STOP if `E2E_max > baseline_E2E_p95 * 10` occurs ≥ 2 times within 60s (spike 탐지)
+
+> 이유: “stable” 같은 표현 대신, baseline 대비 악화폭을 정량화
+
+#### B) Outbox Backlog Age (Count보다 우선)
+- STOP if `outbox_age_p95 > baseline_outbox_age_p95 * 3` for 60s
+- STOP if `outbox_age_p99 > baseline_outbox_age_p99 * 5` for 30s
+- STOP if `outbox_age_slope > +1s per 10s` for 3 consecutive windows (아래 계산 참고)
+
+slope 계산(운영 규칙):
+- 10초 창마다 outbox_age_p95를 찍고,
+- (현재 - 10초전) > +1s 가 3번 연속이면 STOP
+
+> 이유: oldest age는 가려질 수 있음. p95/p99 + slope가 조용한 붕괴에 강함.
+
+#### C) Stage Throughput Mismatch (명시적 로직)
+- STOP if `(ingest_rate - publish_rate) / ingest_rate > 5%` for 60s
+- STOP if `(publish_rate - consume_rate) / publish_rate > 5%` for 60s
+
+추가 규칙(Non-failure runs: LT-001~003):
+- STOP if `retry_enqueue_rate / consume_rate > 10%` for 60s
+
+> 이유: “측정은 하는데 감지를 못 하는” 문제 방지.
+> 특히 retry 증폭(숨은 amplification)을 잡기 위한 조건.
+
+#### D) HikariCP / API (오탐 줄이기)
+기존: pending > 0 for 30s  → 오탐 가능
+개선: 아래 조합으로 STOP
+
+- STOP if `pending > 0 for 15s` AND `active == maxPoolSize` (pool saturation)
+- STOP if `HTTP 5xx rate >= 0.2%` for 60s (auth 성격 고려, 1%는 너무 느슨)
+    - 단, 로컬에서 5xx가 너무 희귀하면 “5xx count >= N”으로 보조 가능
+
+> 이유: 1개 느린 쿼리로 pending이 생기는 오탐을 줄이고,
+> 진짜 saturation(활성=최대)일 때만 멈춤.
+
+#### E) RabbitMQ Unacked (prefetch 고려)
+기존: `Unacked > concurrency*2` → prefetch 설정에 따라 항상 발동 가능(오탐)
+개선:
+- STOP if `Unacked / (consumer_count * prefetch)` > 0.8 for 60s
+- 또는(로컬 단순 버전) STOP if `Unacked`가 60초 동안 **단조 증가** AND `consume_rate` 하락 동반
+
+> 전제: prefetch 값을 기록해야 함.
+
+---
+
+### 9.3 “추가 구현 필요” Stop Rules (옵션: v3에서)
+
+아래는 지표가 있으면 강력하지만, 현재 시스템에 없다면 ‘추가 구현’로 남긴다.
+
+- STOP if `connection_wait_p95 > 50ms` for 60s (DB connection wait histogram 필요)
+- STOP if `Unacked_age_p95 > 10s` f

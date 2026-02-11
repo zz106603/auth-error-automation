@@ -1,227 +1,291 @@
-# Load Test Checklist (k6) — auth-error-automation (v2, Single-Node Local)
-
-> Scope: API → DB insert → Outbox → Publisher → RabbitMQ → Consumer → Retry(TTL) → DLQ → Domain status  
-> Goal: 로컬 단일 환경에서도 “API는 멀쩡한데 파이프라인이 조용히 무너지는” 상황을 **E2E latency + backlog age + stage throughput**으로 잡는다.
+# Load Test Checklist (k6)
+auth-error-automation — Single-Node Local, Production-Grade Strategy
 
 ---
 
-## 0. Core Principles (Non-Negotiable)
+## 0. 목적 (What We Are Actually Testing)
 
-- ✅ “API p95”만으로 성공/실패 판단 금지. (async buffering 때문에 붕괴를 못 봄)
-- ✅ 성공 기준은 **E2E latency가 안정적이고 backlog age가 통제**되는 것.
-- ✅ Stop Conditions는 **정량**이어야 한다. (“지속 증가”, “비정상적” 금지)
-- ✅ 모든 테스트는 Test ID(LT-xxx) + Git hash + 환경값을 기록한다.
+이 부하 테스트의 목적은 단순 TPS 측정이 아니다.
+
+목표는:
+
+- ✅ 조용한 파이프라인 붕괴(silent collapse) 탐지
+- ✅ Retry / DLQ 정책 검증
+- ✅ Backpressure 감지 로직 검증
+- ✅ Outbox 신뢰성 보장 검증
+
+API latency만 빠른 상태는 성공이 아니다.
+
+성공 기준은:
+
+> E2E latency + Backlog Age + Stage Throughput 균형이 유지되는 것
 
 ---
 
-## 1. Environment Record (필수 기록)
+# 1. 테스트 환경 기록
 
-### 1.1 Runtime
+## 1.1 Runtime Environment
+
 - OS / Kernel:
-- CPU / Memory:
-- Java:
-- Spring Boot:
-- PostgreSQL:
-- RabbitMQ:
-- Docker/Compose(사용 시):
-- 실행 방식: Local single-node (IDE / jar / docker)
+    - (테스트 실행 시 `uname -a`로 기록)
 
-### 1.2 핵심 설정(값 기록)
-- HikariCP: `maximumPoolSize`, `connectionTimeout`, `maxLifetime`
-- Outbox poller: interval / batch size / lock 방식(SKIP LOCKED 등)
-- Publisher: publish batch / retry(있다면) / 실패 처리 방식
-- Consumer: concurrency / prefetch / ack mode
-- Retry TTL ladder: (예: 10s/30s/2m/…)
-- DLQ 조건: max attempts / fatal errors / parsing failures
+- CPU / Memory:
+    - (테스트 실행 시 `lscpu`, `free -h`로 기록)
+
+- Java:
+    - 21
+
+- Spring Boot:
+    - 3.5.9
+
+- PostgreSQL:
+    - 16 (Docker)
+
+- RabbitMQ:
+    - 3.13-management (Docker)
+
+- 실행 방식:
+    - 애플리케이션은 로컬 단일 노드 실행
+    - PostgreSQL / RabbitMQ는 Docker Compose 기반
+    - (IDE 실행 또는 jar 실행 여부는 테스트 시 명시)
 
 ---
 
-## 2. Observability Minimum Setup (Go/No-Go)
+### 1.2 핵심 설정
+- HikariCP:
+    - maximumPoolSize: 16
+    - minimumIdle: 8
+    - connectionTimeout: 2000ms
+- Outbox poller:
+    - interval: 200ms
+    - batch size: 100
+- Consumer (Spring Rabbit simple):
+    - concurrency: 4 (fixed)
+    - prefetch: 25
+    - ack mode: manual
+    - defaultRequeueRejected: false
+- Retry TTL ladder:
+    - 1~2: 5s
+    - 3~4: 30s
+    - 5+: 60s
+    - DB retry gate (`outbox.retry.delay-seconds`): 5s (must be <= shortest TTL)
+- DLQ 조건:
+    - Non-retryable 예외: 즉시 DLQ
+    - Retryable 예외: max-retries(6) 도달 시 DLQ
+    - Header/payload contract violation: reject(requeue=false) -> DLQ
 
-> 아래가 준비되지 않으면 부하 테스트 시작하지 않는다.
+---
 
-### 2.1 Actuator / Metrics
-- [ ] `/actuator/health` OK
-- [ ] `/actuator/metrics` 접근 가능
-- [ ] (선택) `/actuator/prometheus` 노출
+### DLQ 정책
 
-필수 메트릭(최소):
-- HTTP: `http.server.requests` (count, p95/p99)
-- JVM: `jvm.memory.used`, `jvm.gc.pause`
-- Hikari:
-    - `hikaricp.connections.active`
-    - `hikaricp.connections.pending`
-    - `hikaricp.connections.idle`
+- 모든 메인 큐는 DLX 연결 구조
+- 비정상 메시지(헤더/페이로드 오류)는 즉시 DLQ
+- Decision = DEAD 시 DLQ 전송
+- Non-retryable 예외 또는 maxRetries 초과 시 DLQ
+- maxRetries 기본값: 10
 
-### 2.2 RabbitMQ Management
-- [ ] UI 접근 가능 (`:15672`)
-- [ ] Queue별 depth / rate 확인 가능
 
-필수 관측:
-- Ready, Unacked
-- Publish rate, Deliver rate
-- Retry queue depth
+---
+
+# 2. Observability Minimum Setup (Go / No-Go)
+
+## 2.1 필수 메트릭
+
+- 사전 조건: `/actuator/metrics` 노출이 활성화되어 있어야 하며, HTTP/JVM/Hikari/Rabbit 지표를 동일 수집 주기로 기록한다.
+
+### HTTP
+- http.server.requests (p95 / p99)
+
+### JVM
+- heap usage
+- GC pause
+
+### Hikari
+- connections.active
+- connections.pending
+- connections.idle
+
+### RabbitMQ
+- Ready
+- Unacked
+- Publish rate
+- Deliver rate
+- Retry depth
 - DLQ depth
 
-### 2.3 PostgreSQL 관측
-- [ ] slow query 로그(기준: 500ms 또는 1000ms)
-- [ ] `pg_stat_activity`, `pg_locks` 조회 가능
-
-### 2.4 Domain / Pipeline Counters (v2 핵심)
-> “성공/실패/정체”를 숫자로 판단하기 위해 최소 카운터를 잡는다.
-
-- [ ] Outbox publish success/fail count (누적)
-- [ ] Consumer handled success/fail count (누적)
-- [ ] Retry publish count (누적) + attempt 분포(최소: attempt=1/2/3+)
-- [ ] DLQ count (누적) + reason code taxonomy(최소: PARSE / DOWNSTREAM / TIMEOUT / UNKNOWN)
+### Domain Counters (필수)
+- Publish success / fail count
+- Consumer success / fail count
+- Retry attempt distribution (1 / 2 / 3+)
+- DLQ reason codes
+- Last successful publish timestamp
 
 ---
 
-## 3. Required Metrics (v2 추가: E2E Latency + Backlog Age)
+# 3. Baseline 정의 (LT-001에서 측정)
 
-### 3.1 End-to-End Latency (E2E)
-목표: “API 수집”이 아니라 “최종 처리”까지의 지연을 본다.
+Baseline은 모든 Stop 조건의 기준이다.
 
-- 정의(예시):
-    - `E2E = now - occurredAt` 또는 `now - recordedAt` (네 도메인 기준으로 고정)
-- 측정 방법(로컬 최소):
-    - DB query로 “처리 완료 row의 latency” 집계 (p95/p99)
-    - 또는 로그/메트릭에 `auth_error_id`, `occurredAt` 기반으로 측정
+반드시 기록:
 
-권장 지표:
-- E2E p95 / p99
-- E2E max
-- E2E가 시간에 따라 증가하는지(추세)
+- baseline_E2E_p95
+- baseline_E2E_p99
+- baseline_outbox_age_p95
+- baseline_outbox_age_p99
+- baseline_ingest_rate
+- baseline_publish_rate
+- baseline_consume_rate
 
-### 3.2 Backlog Age (Count가 아니라 Age)
-“몇 개 쌓였냐”보다 “얼마나 오래 쌓였냐”가 붕괴 신호다.
-
-필수(최소 2개):
-- Outbox oldest age: `now - min(created_at where status=PENDING)`
-- Main queue message age(p95): RabbitMQ에서 age 직접이 어렵다면 **DB 기반 대체 지표**로 추정
-    - (대체) “outbox pending age” + “consumer 처리율”로 판단
-
-추가(가능하면):
-- Retry queue oldest age
-- DLQ message age
+Baseline 없이 절대값 기준만 사용하는 것은 금지.
 
 ---
 
-## 4. Baseline (필수)
+# 4. 핵심 지표 정의
 
-- [ ] 단일 요청 1회 API latency 기록
-- [ ] 1~5 RPS, 2분 실행하여 아래 baseline 확보:
-    - API p95
-    - Hikari pending=0 유지 여부
-    - Outbox pending count / oldest age가 0 또는 안정 상태로 회복
-    - MQ depth가 0 또는 안정 상태로 회복
-    - E2E p95 (처리 완료 기준)
+## 4.1 End-to-End Latency (E2E)
 
----
+정의:
+E2E = now - occurredAt (또는 recordedAt)
 
-## 5. Stop Conditions (정량, Single-Node Local 기준)
+관측:
+- p95
+- p99
+- max
 
-> Baseline 대비 “악화 폭”도 같이 본다.
-
-### 5.1 DB / Pool
-- [ ] `hikaricp.connections.pending` > 0 이 **30초 이상 지속**
-- [ ] API timeout/5xx가 **1% 이상**(1분 창)
-- [ ] slow query(>=1000ms)가 **분당 10건 초과**(로컬 기준)
-
-### 5.2 Outbox / Publisher
-- [ ] Outbox `PENDING count`가 **2분 연속 증가 추세** (증가가 멈추지 않음)
-- [ ] Outbox `oldest age` > **60초**가 **60초 이상 지속**
-- [ ] Publish fail count가 **분당 1건 초과** + 자동 회복 안 됨
-
-### 5.3 MQ / Consumer
-- [ ] Main queue Ready가 **2분 연속 증가** + Deliver rate가 따라가지 못함
-- [ ] Unacked가 **(consumer concurrency * 2)** 를 초과하고 60초 유지
-- [ ] Requeue/Redelivered 징후가 증가(가능하면) + 처리율 저하 동반
-
-### 5.4 Retry / DLQ
-- [ ] Retry queue depth가 **지속 증가(2분)** 하며 회복되지 않음
-- [ ] DLQ rate가 **ingest의 0.5% 초과**(의도적 실패 시나리오 제외)
-- [ ] “의도치 않은 endless retry” 징후:
-    - attempt=3+ 비율이 계속 상승 + DLQ로 전환되지 않음
-
-### 5.5 System Safety Caps
-- [ ] JVM heap 사용량이 **지속적으로 증가**하며 GC pause가 증가 추세
-- [ ] CPU 90%+가 **1분 이상 지속** (가능하면 OS 툴로 확인)
+E2E는 API latency보다 중요하다.
 
 ---
 
-## 6. Scenarios (v2: Throughput + E2E + Age 중심)
+## 4.2 Backlog Age (Count보다 중요)
 
-### LT-001 Baseline Smoke (정상)
-- 부하: 1~5 RPS, 2~5분
-- 성공:
-    - E2E p95 안정
-    - Outbox oldest age가 0~작은 값으로 회복
-    - DLQ 증가 0
-- 수집:
-    - API p95, E2E p95/p99, outbox pending count, outbox oldest age, queue depth
+필수:
 
-### LT-002 Ramp-up (임계점 찾기)
-- 부하: 10 → 50 → 100 → 200 VUs (각 1~2분)
-- 성공:
-    - 임계점까지 E2E/age가 통제됨
-    - 임계점에서 “어느 stage가 먼저 무너지는지” 식별됨
-- 수집:
-    - stage throughput(ingest vs publish vs consume), E2E 추세, oldest age 추세
+- outbox_age_p95
+- outbox_age_p99
+- outbox_age_slope
 
-### LT-003 Steady Load (지속)
-- 부하: 100~200 VUs, 10~20분
-- 성공:
-    - 시간이 지날수록 E2E p95가 악화되지 않음
-    - oldest age가 상승 추세가 아님
-- 수집:
-    - JVM GC pause, heap, outbox age, retry age(가능 시), DLQ 증가율
-
-### LT-004 Failure Injection (의도적 실패)
-- 전제: “실패 주입”을 명확히 켠다 (consumer failAlways 등)
-- 성공:
-    - retry TTL이 기대한 지연과 대략 일치
-    - max attempts 후 DLQ로 이동
-    - DLQ reason taxonomy가 의미 있게 남음
+slope 계산:
+10초 간격으로 p95를 측정하여 증가폭 계산
 
 ---
 
-## 7. Results Template (필수)
+## 4.3 Stage Throughput
 
-### Execution
-- Test ID:
-- Date/Time (Asia/Seoul):
-- Git hash:
-- Env summary:
-- k6 script / options:
-
-### Numbers
-- API p95/p99:
-- E2E p95/p99/max:
-- Hikari pending max:
-- Outbox PENDING max:
-- Outbox oldest age max:
-- MQ main queue Ready max:
-- Unacked max:
-- Retry depth max:
-- DLQ count delta:
-- Publish fail/min:
-- Consumer fail/min:
-- Slow query/min:
-
-### Interpretation
-- First bottleneck stage:
-- Evidence (metrics/logs):
-- Next change (config/code) & re-run plan:
+- ingest_rate
+- publish_rate
+- consume_rate
+- retry_enqueue_rate
 
 ---
 
-## 8. Go / No-Go Final Gate
+# 5. Stop Conditions (Baseline-Aware)
 
-- [ ] E2E latency 측정 경로 확정(쿼리/메트릭/로그 중 하나)
-- [ ] Outbox oldest age 산출 가능
-- [ ] Publish/Consume/Retry/DLQ 최소 카운터 존재
-- [ ] Stop Conditions가 숫자로 적용 가능
-- [ ] LT-001~LT-004 실행 계획 있음
+모든 조건은 "임계치 + 시간창" 구조를 따른다.
 
-> All checked → Proceed to k6 scripts.
+---
+
+## 5.1 E2E Latency
+
+STOP if:
+
+- E2E_p95 > baseline_E2E_p95 * 3 for 60s
+- E2E_p99 > baseline_E2E_p99 * 5 for 60s
+- E2E_max > baseline_E2E_p95 * 10 twice within 60s
+
+---
+
+## 5.2 Outbox Backlog Age
+
+STOP if:
+
+- outbox_age_p95 > baseline_outbox_age_p95 * 3 for 60s
+- outbox_age_p99 > baseline_outbox_age_p99 * 5 for 30s
+- outbox_age_slope > +1s per 10s for 3 consecutive windows
+
+---
+
+## 5.3 Throughput Mismatch
+
+STOP if:
+
+- (ingest - publish) / ingest > 5% for 60s
+- (publish - consume) / publish > 5% for 60s
+- retry_enqueue_rate / consume_rate > 10% for 60s (non-failure runs)
+
+---
+
+## 5.4 Hikari / Pool Saturation
+
+STOP if:
+
+- connections.pending > 0 for 15s AND active == maxPoolSize
+- HTTP 5xx rate >= 0.2% for 60s
+
+---
+
+## 5.5 MQ Health
+
+STOP if:
+
+- `publish_rate > consume_rate` 가 60s 이상 지속되고 `Ready`가 단조 증가
+- `Unacked / (consumer_count * prefetch)` > 0.8 이 60s 이상 지속
+- retry_queue depth(전체) 증가 + consume_rate 하락이 60s 이상 동시 발생 (Non-failure runs)
+
+---
+
+# 6. Failure Injection (LT-004 전용)
+
+다음은 즉시 STOP 조건이 아니다:
+
+- attempt=3+ 비율 상승
+- Retry depth 상승
+
+STOP 조건:
+
+- TTL ladder가 적용되지 않고 즉시 재시도 폭주
+- DLQ로 가야 할 메시지가 계속 retry 중
+- DLQ reason taxonomy가 의미 없는 값만 남는 경우
+
+---
+
+# 7. 테스트 시나리오
+
+## LT-001 Baseline
+- 1~5 RPS
+- 2~5분
+- 모든 baseline 값 확보
+
+## LT-002 Ramp-up
+- 단계적 증가
+- 임계점 탐색
+- 어느 stage가 먼저 무너지는지 기록
+
+## LT-003 Steady Load
+- 10~20분 지속
+- age 상승 추세 확인
+
+## LT-004 Failure Injection
+- consumer fail
+- retry/dlq 정책 검증
+
+---
+
+# 8. 성공 정의
+
+성공은 다음을 모두 만족할 때:
+
+- E2E latency가 baseline 대비 안정적
+- Backlog age가 상승 추세 아님
+- Stage throughput mismatch 없음
+- Retry/DLQ가 정책대로 동작
+- System saturation 없음
+
+API p95만 정상인 상태는 성공이 아니다.
+
+---
+
+# 9. 금지 사항
+
+- 절대값 60s / 2min 같은 단독 기준 사용 금지
+- "지속 증가" 같은 모호한 표현 사용 금지
+- API latency만 보고 성공 판단 금지
