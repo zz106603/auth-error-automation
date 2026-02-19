@@ -2,7 +2,6 @@ package com.yunhwan.auth.error.usecase.consumer.handler;
 
 import com.yunhwan.auth.error.common.exception.NonRetryableAuthErrorException;
 import com.yunhwan.auth.error.domain.autherror.AuthError;
-import com.yunhwan.auth.error.domain.autherror.AuthErrorStatus;
 import com.yunhwan.auth.error.infra.messaging.consumer.parser.JacksonAuthErrorAnalysisRequestedPayloadParser;
 import com.yunhwan.auth.error.usecase.autherror.analysis.AuthErrorAnalysisService;
 import com.yunhwan.auth.error.usecase.autherror.cluster.AuthErrorClusterLinker;
@@ -13,7 +12,6 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.util.EnumSet;
 import java.util.Map;
 
 @Slf4j
