@@ -10,7 +10,5 @@ create table if not exists auth_error_cluster_item (
 
 create index if not exists ix_cluster_item_auth_error_id
     on auth_error_cluster_item (auth_error_id);
-create index ix_cluster_item_cluster_id
-    on auth_error_cluster_item(cluster_id);
 create index ix_cluster_item_created_at
     on auth_error_cluster_item(created_at);
