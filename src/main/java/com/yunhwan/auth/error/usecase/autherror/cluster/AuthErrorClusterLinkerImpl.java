@@ -33,12 +33,7 @@ public class AuthErrorClusterLinkerImpl implements AuthErrorClusterLinker {
         // 2) item 삽입 성공시에만 카운트 증가 (CTE로 강제)
         boolean inserted = authErrorClusterStore.insertItemAndIncrementIfInserted(clusterId, authErrorId, now);
 
-        // 3) 이미 존재했던 링크라도 updated_at은 최신화하고 싶으면 touch
-        if (!inserted) {
-            authErrorClusterStore.touch(clusterId, now);
-        }
-
-        log.info("[ClusterLink] linked. authErrorId={}, clusterId={}, key={}", authErrorId, clusterId, stackHash);
+        log.info("[ClusterLink] linked. authErrorId={}, clusterId={}, key={}, flag={}", authErrorId, clusterId, stackHash, inserted);
     }
 }
 
