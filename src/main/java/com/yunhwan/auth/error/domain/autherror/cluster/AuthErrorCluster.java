@@ -17,7 +17,7 @@ import java.time.OffsetDateTime;
 @Table(
         name = "auth_error_cluster",
         uniqueConstraints = {
-                @UniqueConstraint(name = "uq_auth_error_cluster_key", columnNames = "cluster_key")
+                @UniqueConstraint(name = "uk_auth_error_cluster_cluster_key", columnNames = "cluster_key")
         },
         indexes = {
                 @Index(name = "ix_auth_error_cluster_last_seen", columnList = "last_seen_at")
@@ -67,15 +67,6 @@ public class AuthErrorCluster {
                 .firstSeenAt(now)
                 .lastSeenAt(now)
                 .build();
-    }
-
-    public void touch(OffsetDateTime now) {
-        if (this.firstSeenAt == null) this.firstSeenAt = now;
-        this.lastSeenAt = now;
-    }
-
-    public void incrementCount() {
-        this.totalCount += 1;
     }
 
     public void changeStatus(AuthErrorClusterStatus status) {

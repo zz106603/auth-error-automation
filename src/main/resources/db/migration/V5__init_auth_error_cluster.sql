@@ -10,7 +10,8 @@ create table if not exists auth_error_cluster (
     last_seen_at timestamptz,
     created_at timestamptz not null default now(),
     updated_at timestamptz not null default now(),
-    constraint uq_auth_error_cluster_key unique (cluster_key)
+    constraint uk_auth_error_cluster_cluster_key unique (cluster_key),
+    constraint ck_auth_error_cluster_total_count check (total_count >= 0)
 );
 
 create index if not exists ix_auth_error_cluster_last_seen
