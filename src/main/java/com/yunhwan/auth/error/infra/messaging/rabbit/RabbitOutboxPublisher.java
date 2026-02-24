@@ -3,8 +3,11 @@ package com.yunhwan.auth.error.infra.messaging.rabbit;
 import com.yunhwan.auth.error.common.exception.NonRetryablePublishException;
 import com.yunhwan.auth.error.common.exception.RetryablePublishException;
 import com.yunhwan.auth.error.domain.outbox.OutboxMessage;
+import com.yunhwan.auth.error.infra.metrics.MetricsConfig;
+import io.micrometer.core.instrument.Counter;
+import io.micrometer.core.instrument.Gauge;
+import io.micrometer.core.instrument.MeterRegistry;
 import com.yunhwan.auth.error.usecase.outbox.port.OutboxPublisher;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.amqp.core.MessageProperties;
 import org.springframework.amqp.core.ReturnedMessage;
@@ -13,6 +16,7 @@ import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.stereotype.Component;
 
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 
@@ -26,10 +30,19 @@ import java.util.concurrent.TimeoutException;
  */
 @Slf4j
 @Component
-@RequiredArgsConstructor
 public class RabbitOutboxPublisher implements OutboxPublisher {
 
     private final RabbitTemplate rabbitTemplate;
+    private final MeterRegistry meterRegistry;
+    private final AtomicLong lastPublishSuccessEpochMs = new AtomicLong(0);
+
+    public RabbitOutboxPublisher(RabbitTemplate rabbitTemplate, MeterRegistry meterRegistry) {
+        this.rabbitTemplate = rabbitTemplate;
+        this.meterRegistry = meterRegistry;
+        // publish 정지 감지용 (silent collapse)
+        Gauge.builder(MetricsConfig.METRIC_PUBLISH_LAST_SUCCESS_EPOCH_MS, lastPublishSuccessEpochMs, AtomicLong::get)
+                .register(meterRegistry);
+    }
 
     @Override
     public void publish(OutboxMessage message) throws Exception {
@@ -67,6 +80,8 @@ public class RabbitOutboxPublisher implements OutboxPublisher {
             if (!confirm.isAck()) {
                 log.warn("[RabbitOutboxPublisher] Broker NACK. id={}, reason={}",
                         message.getId(), confirm.getReason());
+                // publish_rate 분모(성공/실패 구분)
+                publishCounter(message.getEventType(), MetricsConfig.RESULT_NACK).increment();
                 throw new RetryablePublishException("Broker NACK. reason=" + confirm.getReason(), null);
             }
 
@@ -77,19 +92,36 @@ public class RabbitOutboxPublisher implements OutboxPublisher {
             if (returned != null) {
                 log.warn("[RabbitOutboxPublisher] Message RETURNED (Routing Failed). id={}, replyCode={}, replyText={}",
                         message.getId(), returned.getReplyCode(), returned.getReplyText());
+                // non-retryable 분리 지표
+                publishCounter(message.getEventType(), MetricsConfig.RESULT_RETURNED).increment();
                 throw new NonRetryablePublishException("Routing failed. replyCode=" + returned.getReplyCode());
             }
 
             // 성공 로그
             log.info("[RabbitOutboxPublisher] Publish SUCCESS. id={}", message.getId());
+            // publish_rate 기준선
+            publishCounter(message.getEventType(), MetricsConfig.RESULT_SUCCESS).increment();
+            lastPublishSuccessEpochMs.set(System.currentTimeMillis());
 
         } catch (TimeoutException e) {
             log.error("[RabbitOutboxPublisher] Confirm timeout. id={}", message.getId());
+            // broker 지연 탐지
+            publishCounter(message.getEventType(), MetricsConfig.RESULT_TIMEOUT).increment();
             throw new RetryablePublishException("Confirm timeout", e);
         } catch (Exception e) {
             // 그 외 예외 (InterruptedException 등)
             log.error("[RabbitOutboxPublisher] Publish ERROR. id={}, error={}", message.getId(), e.getMessage(), e);
+            // 일반 실패 집계
+            publishCounter(message.getEventType(), MetricsConfig.RESULT_ERROR).increment();
             throw e;
         }
+    }
+
+    private Counter publishCounter(String eventType, String result) {
+        // event_type+result만 사용
+        return Counter.builder(MetricsConfig.METRIC_PUBLISH)
+                .tag(MetricsConfig.TAG_EVENT_TYPE, eventType)
+                .tag(MetricsConfig.TAG_RESULT, result)
+                .register(meterRegistry);
     }
 }
