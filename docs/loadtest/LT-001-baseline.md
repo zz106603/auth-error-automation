@@ -1,111 +1,88 @@
-# LT-001 Baseline 결과
+# LT-001 Baseline 결과 (Template)
 
-## 1. 테스트 개요
-
-- 목적: 시스템의 정상 상태(Baseline) 성능 및 병목 여부 확인
-- 시나리오: LT-001 (Constant Arrival Rate)
-- 실행 방식: Docker k6 → Local Spring
-- DB / MQ: Docker (PostgreSQL, RabbitMQ)
-- 실행 일시: 2026-02-19
+## 0. 실행 정보
+- 실행 일시(UTC): YYYY-MM-DDTHH:mm:ssZ
+- 실행 일시(LOCAL): YYYY-MM-DD HH:mm:ss (TZ)
+- k6 실행 환경: Docker k6 → Local Spring
+- DB/MQ: Docker (PostgreSQL, RabbitMQ)
+- Git commit: <hash>
 
 ---
 
-## 2. k6 실행 설정
-
+## 1. k6 실행 설정
 - Executor: constant-arrival-rate
 - Rate: 5 requests/sec
 - Duration: 3 minutes
-- 총 요청 수: 900
+- 총 요청 수: <N>
 - VUs: preAllocated 20 / max 50
 
 ---
 
-## 3. k6 결과 요약
+## 2. Baseline Metrics (필수)
 
-### 요청 성공률
-
-- checks_succeeded: 100% (900 / 900)
-- http_req_failed: 0%
-- status is 2xx: 100%
-
-### HTTP Latency
-
-- avg: 12.13ms
-- p90: 15.48ms
-- p95: 17.83ms
-- max: 287.95ms
-
-→ HTTP 레벨에서 병목 없음.
+| Metric | Value | Source | Notes |
+|---|---:|---|---|
+| baseline_E2E_p95 (ms) |  | `/actuator/metrics/auth_error.e2e?tag=event_type:auth.error.recorded.v1` | 소비 완료 시점 기준 |
+| baseline_E2E_p99 (ms) |  | `/actuator/metrics/auth_error.e2e?tag=event_type:auth.error.recorded.v1` |  |
+| baseline_outbox_age_p95 (ms) |  | `/actuator/metrics/auth_error.outbox.age.p95` | PENDING/PROCESSING 포함 |
+| baseline_outbox_age_p99 (ms) |  | `/actuator/metrics/auth_error.outbox.age.p99` |  |
+| baseline_ingest_rate (req/s) |  | `auth_error.ingest` counter delta / 10s | `tag: api=/api/auth-errors` |
+| baseline_publish_rate (msg/s) |  | `auth_error.publish` counter delta / 10s | `tag: result=success` |
+| baseline_consume_rate (ack/s) |  | `auth_error.consume` counter delta / 10s | `tag: result=success` |
+| baseline_retry_enqueue_rate (msg/s) |  | `auth_error.retry.enqueue` counter delta / 10s |  |
+| baseline_dlq_rate (msg/s) |  | `auth_error.dlq` counter delta / 10s |  |
+| baseline_last_publish_success_epoch_ms |  | `/actuator/metrics/auth_error.publish.last_success_epoch_ms` |  publish 정지 감지 |
 
 ---
 
-## 4. DB 상태 (HikariCP)
+## 3. RabbitMQ 상태 (STOP 조건 기반)
 
-테스트 종료 직후 측정:
-
-- connections.active: 0
-- connections.pending: 0
-- connections.idle: 8
-
-해석:
-
-- pending=0 → 커넥션 풀 부족 현상 없음
-- idle 여유 존재 → DB 병목 없음
+| Metric | Value | Source |
+|---|---:|---|
+| Ready |  | `/actuator/metrics/auth_error.rabbit.ready` |
+| Unacked |  | `/actuator/metrics/auth_error.rabbit.unacked` |
+| Publish rate |  | `/actuator/metrics/auth_error.rabbit.publish_rate` |
+| Deliver rate |  | `/actuator/metrics/auth_error.rabbit.deliver_rate` |
+| Retry depth |  | `/actuator/metrics/auth_error.rabbit.retry_depth` |
+| DLQ depth |  | `/actuator/metrics/auth_error.rabbit.dlq_depth` |
 
 ---
 
-## 5. DB 적재 확인
+## 4. STOP Condition Mapping (Enforceability)
 
-- auth_error 테이블 row 증가 확인
-- 요청 수와 동일하게 데이터 적재됨
+### 4.1 E2E Latency
+- `E2E_p95` → `auth_error.e2e` p95
+- `E2E_p99` → `auth_error.e2e` p99
+- `E2E_max` → `auth_error.e2e` max  
+Note: E2E는 **AuthErrorRecordedConsumer 완료 시점 기준**으로 측정. Analysis consumer는 제외됨.
 
-→ Ingest → DB Write 정상 동작
+### 4.2 Outbox Backlog Age
+- `outbox_age_p95` → `auth_error.outbox.age.p95`
+- `outbox_age_p99` → `auth_error.outbox.age.p99`
+- `outbox_age_slope` → `auth_error.outbox.age.slope_ms_per_10s`
 
----
+### 4.3 Stage Throughput
+- `ingest_rate` → `auth_error.ingest` counter delta / 10s
+- `publish_rate` → `auth_error.publish{result=success}` delta / 10s
+- `consume_rate` → `auth_error.consume{result=success}` delta / 10s
+- `retry_enqueue_rate` → `auth_error.retry.enqueue` delta / 10s
 
-## 6. RabbitMQ 상태
+> 10초 단위 증가량으로 rate 계산 (PromQL: `increase(x[10s])/10`)
 
-### Queue 상태 (테스트 중 관측)
+### 4.4 Hikari / Pool Saturation
+- `connections.pending` → `hikaricp.connections.pending`
+- `connections.active` → `hikaricp.connections.active`
 
-- Ready: 0 유지
-- Unacked: 0 또는 순간적 소량 후 0 복귀
-- Publish ≈ Deliver ≈ Consumer Ack (동일 수준)
-
-해석:
-
-- 메시지 적체 없음
-- Consumer 처리 속도가 Publish 속도를 충분히 따라감
-- Redelivered 거의 없음
-
-→ MQ 병목 없음
-
----
-
-## 7. Baseline 결론
-
-5 RPS 환경에서 시스템은 다음 조건을 만족함:
-
-- HTTP 처리 안정
-- DB 커넥션 풀 여유
-- DB 적재 정상
-- MQ 적체 없음
-- End-to-End 파이프라인 정상
-
-### Baseline 기준선
-
-- HTTP p95 ≈ 18ms
-- DB pending = 0
-- MQ Ready = 0 유지
-- Publish ≈ Deliver ≈ Ack
+### 4.5 MQ Health
+- `Ready` → `auth_error.rabbit.ready`
+- `Unacked` → `auth_error.rabbit.unacked`
+- `publish_rate` → `auth_error.rabbit.publish_rate`
+- `deliver_rate` → `auth_error.rabbit.deliver_rate`
+- `retry_depth` → `auth_error.rabbit.retry_depth`
+- `DLQ depth` → `auth_error.rabbit.dlq_depth`
 
 ---
 
-## 8. 다음 단계
-
-LT-002 Ramp-up 테스트를 통해:
-
-- 어느 지점에서 Ready가 증가하기 시작하는지
-- 어느 지점에서 Hikari pending이 발생하는지
-- Outbox age가 증가하는 시점은 언제인지
-
-병목 시작 지점을 탐지한다.
+## 5. Notes
+- E2E 측정은 recorded 이벤트에 한정.
+- client-side `client_ingest_latency_ms`는 참고용이며 STOP 조건에는 사용하지 않는다.
