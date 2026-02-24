@@ -37,8 +37,6 @@ public class OutboxAgeMetricsScheduler implements SchedulingConfigurer {
     private final AtomicLong p99Ms = new AtomicLong(0);
     private final AtomicLong slopeMsPer10s = new AtomicLong(0);
     private volatile long lastP95Ms = 0;
-    // p95/p99 histogram 제공(Actuator percentile)
-    private DistributionSummary outboxAgeSummary;
 
     @PostConstruct
     void init() {
@@ -46,11 +44,6 @@ public class OutboxAgeMetricsScheduler implements SchedulingConfigurer {
         Gauge.builder(METRIC_OUTBOX_AGE_P95, p95Ms, AtomicLong::get).register(meterRegistry);
         Gauge.builder(METRIC_OUTBOX_AGE_P99, p99Ms, AtomicLong::get).register(meterRegistry);
         Gauge.builder(METRIC_OUTBOX_AGE_SLOPE, slopeMsPer10s, AtomicLong::get).register(meterRegistry);
-
-        outboxAgeSummary = DistributionSummary.builder(METRIC_OUTBOX_AGE)
-                .publishPercentiles(0.95, 0.99)
-                .publishPercentileHistogram()
-                .register(meterRegistry);
     }
 
     @Override
@@ -75,9 +68,6 @@ public class OutboxAgeMetricsScheduler implements SchedulingConfigurer {
             slopeMsPer10s.set(slope);
             lastP95Ms = currentP95;
 
-            // Actuator percentile 계산용 샘플 (고카디널리티 없음)
-            outboxAgeSummary.record(currentP95);
-            outboxAgeSummary.record(currentP99);
         } catch (Exception e) {
             log.warn("[OutboxAgeMetrics] failed to collect outbox age metrics: {}", e.toString());
         }
