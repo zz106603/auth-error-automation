@@ -1,7 +1,7 @@
 package com.yunhwan.auth.error.usecase.outbox.port;
 
-import com.yunhwan.auth.error.domain.autherror.AuthError;
 import com.yunhwan.auth.error.domain.outbox.OutboxMessage;
+import com.yunhwan.auth.error.infra.metrics.OutboxAgeStats;
 
 import java.time.OffsetDateTime;
 import java.util.List;
@@ -47,5 +47,8 @@ public interface OutboxMessageStore {
     List<OutboxMessage> pickStaleProcessing(OffsetDateTime staleBefore, int batchSize, String scopePrefix);
 
     int takeoverStaleProcessing(long id, String newOwner, OffsetDateTime now, OffsetDateTime staleBefore);
+
+    // outbox age(p95/p99) 집계 조회 (per-message 조회 금지)
+    OutboxAgeStats loadOutboxAgeStats(OffsetDateTime now);
 
 }
