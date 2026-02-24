@@ -150,3 +150,5 @@ replay_pid*
 build/
 
 .env
+
+docs/loadtest/baseline-captures/
