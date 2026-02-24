@@ -21,30 +21,30 @@
 ## 2. Baseline Metrics (필수)
 
 | Metric | Value | Source | Notes |
-|---|---:|---|---|
-| baseline_E2E_p95 (ms) |  | `/actuator/metrics/auth_error.e2e?tag=event_type:auth.error.recorded.v1` | 소비 완료 시점 기준 |
-| baseline_E2E_p99 (ms) |  | `/actuator/metrics/auth_error.e2e?tag=event_type:auth.error.recorded.v1` |  |
-| baseline_outbox_age_p95 (ms) |  | `/actuator/metrics/auth_error.outbox.age.p95` | PENDING/PROCESSING 포함 |
-| baseline_outbox_age_p99 (ms) |  | `/actuator/metrics/auth_error.outbox.age.p99` |  |
-| baseline_ingest_rate (req/s) |  | `auth_error.ingest` counter delta / 10s | `tag: api=/api/auth-errors` |
-| baseline_publish_rate (msg/s) |  | `auth_error.publish` counter delta / 10s | `tag: result=success` |
-| baseline_consume_rate (ack/s) |  | `auth_error.consume` counter delta / 10s | `tag: result=success` |
-| baseline_retry_enqueue_rate (msg/s) |  | `auth_error.retry.enqueue` counter delta / 10s |  |
-| baseline_dlq_rate (msg/s) |  | `auth_error.dlq` counter delta / 10s |  |
-| baseline_last_publish_success_epoch_ms |  | `/actuator/metrics/auth_error.publish.last_success_epoch_ms` |  publish 정지 감지 |
+| --- | --- | --- | --- |
+| baseline_E2E_p95 (ms) | **817.55** | `/actuator/metrics/auth_error.e2e?tag=event_type:auth.error.recorded.v1` | 소비 완료 시점 기준 |
+| baseline_E2E_p99 (ms) | **1417.25** | `/actuator/metrics/auth_error.e2e?tag=event_type:auth.error.recorded.v1` |  |
+| baseline_outbox_age_p95 (ms) | **0.000** | `/actuator/metrics/auth_error.outbox.age.p95` | PENDING/PROCESSING 포함 |
+| baseline_outbox_age_p99 (ms) | **0.000** | `/actuator/metrics/auth_error.outbox.age.p99` |  |
+| baseline_ingest_rate (req/s) | **4.873** | `auth_error.ingest` counter delta / 10s | `tag: api=/api/auth-errors` |
+| baseline_publish_rate (msg/s) | **4.873** | `auth_error.publish` counter delta / 10s | `tag: result=success` |
+| baseline_consume_rate (ack/s) | **4.873** | `auth_error.consume` counter delta / 10s | `tag: result=success` |
+| baseline_retry_enqueue_rate (msg/s) | **0.000** | `auth_error.retry.enqueue` counter delta / 10s | baseline assumed none |
+| baseline_dlq_rate (msg/s) | **0.000** | `auth_error.dlq` counter delta / 10s | baseline assumed none |
+| baseline_last_publish_success_epoch_ms | **1771921492091.000** | `/actuator/metrics/auth_error.publish.last_success_epoch_ms` | publish 정지 감지 |
 
 ---
 
 ## 3. RabbitMQ 상태 (STOP 조건 기반)
 
 | Metric | Value | Source |
-|---|---:|---|
-| Ready |  | `/actuator/metrics/auth_error.rabbit.ready` |
-| Unacked |  | `/actuator/metrics/auth_error.rabbit.unacked` |
-| Publish rate |  | `/actuator/metrics/auth_error.rabbit.publish_rate` |
-| Deliver rate |  | `/actuator/metrics/auth_error.rabbit.deliver_rate` |
-| Retry depth |  | `/actuator/metrics/auth_error.rabbit.retry_depth` |
-| DLQ depth |  | `/actuator/metrics/auth_error.rabbit.dlq_depth` |
+| --- | --- | --- |
+| Ready | **0.000** | `/actuator/metrics/auth_error.rabbit.ready` |
+| Unacked | **0.000** | `/actuator/metrics/auth_error.rabbit.unacked` |
+| Publish rate | **5.000** | `/actuator/metrics/auth_error.rabbit.publish_rate` |
+| Deliver rate | **5.000** | `/actuator/metrics/auth_error.rabbit.deliver_rate` |
+| Retry depth | **0.000** | `/actuator/metrics/auth_error.rabbit.retry_depth` |
+| DLQ depth | **0.000** | `/actuator/metrics/auth_error.rabbit.dlq_depth` |
 
 ---
 
