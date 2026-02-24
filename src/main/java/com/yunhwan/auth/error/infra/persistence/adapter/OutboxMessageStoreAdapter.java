@@ -1,7 +1,7 @@
 package com.yunhwan.auth.error.infra.persistence.adapter;
 
-import com.yunhwan.auth.error.domain.autherror.AuthError;
 import com.yunhwan.auth.error.domain.outbox.OutboxMessage;
+import com.yunhwan.auth.error.infra.metrics.OutboxAgeStats;
 import com.yunhwan.auth.error.infra.persistence.jpa.OutboxJpaRepository;
 import com.yunhwan.auth.error.usecase.outbox.port.OutboxMessageStore;
 import lombok.RequiredArgsConstructor;
@@ -9,6 +9,7 @@ import org.springframework.stereotype.Repository;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.OffsetDateTime;
+import java.util.Objects;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
@@ -85,5 +86,23 @@ public class OutboxMessageStoreAdapter implements OutboxMessageStore {
     @Override
     public int takeoverStaleProcessing(long id, String newOwner, OffsetDateTime now, OffsetDateTime staleBefore) {
         return repo.takeoverStaleProcessing(id, newOwner, now, staleBefore);
+    }
+
+    @Override
+    // backlog age(p95/p99) 조회용 (STOP 5.2)
+    public OutboxAgeStats loadOutboxAgeStats(OffsetDateTime now) {
+        Object[] row = repo.findOutboxAgeP95P99Ms(now);
+        if (row == null || row.length < 2) {
+            return new OutboxAgeStats(0, 0);
+        }
+        long p95 = toLong(row[0]);
+        long p99 = toLong(row[1]);
+        return new OutboxAgeStats(p95, p99);
+    }
+
+    private long toLong(Object v) {
+        if (v == null) return 0;
+        if (v instanceof Number n) return n.longValue();
+        return Long.parseLong(Objects.toString(v));
     }
 }

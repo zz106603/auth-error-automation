@@ -175,6 +175,22 @@ public interface OutboxJpaRepository extends JpaRepository<OutboxMessage, Long> 
             @Param("scopePrefix") String scopePrefix
     );
 
+    @Query(value = """
+    select
+      coalesce(
+        percentile_disc(0.95) within group (order by extract(epoch from (:now - created_at)) * 1000),
+        0
+      )::bigint as p95_ms,
+      coalesce(
+        percentile_disc(0.99) within group (order by extract(epoch from (:now - created_at)) * 1000),
+        0
+      )::bigint as p99_ms
+    from outbox_message
+    where status in ('PENDING', 'PROCESSING')
+    """, nativeQuery = true)
+    // outbox_age_p95/p99 산출용 (집계 쿼리 1회)
+    Object[] findOutboxAgeP95P99Ms(@Param("now") OffsetDateTime now);
+
     @Modifying(clearAutomatically = true, flushAutomatically = true)
     @Transactional
     @Query(value = """

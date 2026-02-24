@@ -11,7 +11,7 @@ public class OutboxSchedulingConfig {
     @Bean
     public TaskScheduler outboxTaskScheduler() {
         ThreadPoolTaskScheduler scheduler = new ThreadPoolTaskScheduler();
-        scheduler.setPoolSize(2); // poller + reaper
+        scheduler.setPoolSize(4); // 부하 테스트 지표 스케줄러 포함
         scheduler.setThreadNamePrefix("outbox-");
         scheduler.initialize();
         return scheduler;
