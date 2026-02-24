@@ -7,6 +7,7 @@ import io.micrometer.core.instrument.MeterRegistry;
 import jakarta.annotation.PostConstruct;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Profile;
 import org.springframework.http.HttpEntity;
@@ -31,7 +32,6 @@ import static com.yunhwan.auth.error.infra.metrics.MetricsConfig.*;
 @Slf4j
 @Component
 @Profile("!test")
-@RequiredArgsConstructor
 @ConditionalOnProperty(name = "metrics.rabbit.enabled", havingValue = "true", matchIfMissing = false)
 public class RabbitMqMetricsPoller implements SchedulingConfigurer {
 
@@ -39,8 +39,22 @@ public class RabbitMqMetricsPoller implements SchedulingConfigurer {
     private final MeterRegistry meterRegistry;
     private final TaskScheduler outboxTaskScheduler;
     private final ObjectMapper objectMapper;
+    private final RestTemplate restTemplate;
 
-    private final RestTemplate restTemplate = new RestTemplate();
+    public RabbitMqMetricsPoller(
+            RabbitManagementProperties props,
+            MeterRegistry meterRegistry,
+            TaskScheduler outboxTaskScheduler,
+            ObjectMapper objectMapper,
+            @Qualifier("rabbitMqMetricsRestTemplate") RestTemplate restTemplate
+    ) {
+        this.props = props;
+        this.meterRegistry = meterRegistry;
+        this.outboxTaskScheduler = outboxTaskScheduler;
+        this.objectMapper = objectMapper;
+        this.restTemplate = restTemplate;
+    }
+
     // 값만 갱신(태그 고정, 고카디널리티 없음)
     private final Map<String, AtomicReference<Double>> gauges = new ConcurrentHashMap<>();
 
