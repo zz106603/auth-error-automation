@@ -22,29 +22,31 @@
 
 | Metric | Value | Source | Notes |
 | --- | --- | --- | --- |
-| baseline_E2E_p95 (ms) | **817.55** | `/actuator/metrics/auth_error.e2e?tag=event_type:auth.error.recorded.v1` | 소비 완료 시점 기준 |
-| baseline_E2E_p99 (ms) | **1417.25** | `/actuator/metrics/auth_error.e2e?tag=event_type:auth.error.recorded.v1` |  |
-| baseline_outbox_age_p95 (ms) | **0.000** | `/actuator/metrics/auth_error.outbox.age.p95` | PENDING/PROCESSING 포함 |
-| baseline_outbox_age_p99 (ms) | **0.000** | `/actuator/metrics/auth_error.outbox.age.p99` |  |
-| baseline_ingest_rate (req/s) | **4.873** | `auth_error.ingest` counter delta / 10s | `tag: api=/api/auth-errors` |
-| baseline_publish_rate (msg/s) | **4.873** | `auth_error.publish` counter delta / 10s | `tag: result=success` |
-| baseline_consume_rate (ack/s) | **4.873** | `auth_error.consume` counter delta / 10s | `tag: result=success` |
+| baseline_E2E_p95 (ms) | **548.00** | `histogram_quantile(0.95, sum by (le) (rate(auth_error_e2e_seconds_bucket[1m])))` | 소비 완료 시점 기준 |
+| baseline_E2E_p99 (ms) | **619.00** | `histogram_quantile(0.99, sum by (le) (rate(auth_error_e2e_seconds_bucket[1m])))` |  |
+| baseline_outbox_age_p95 (ms) | **0.000** | `auth_error_outbox_age_p95` | backlog 없음(0) |
+| baseline_outbox_age_p99 (ms) | **0.000** | `auth_error_outbox_age_p99` |  |
+| baseline_ingest_rate (req/s) | **4.34** | `sum(rate(http_server_requests_seconds_count{uri="/api/auth-errors"}[1m]))` | HTTP RPS 기준 |
+| baseline_publish_rate (msg/s) | **8.68** | `sum(rate(auth_error_publish_total{result="success"}[1m]))` | 앱 메트릭 기준 |
+| baseline_consume_rate (ack/s) | **8.68** | `sum(rate(auth_error_consume_total{result="success"}[1m]))` | 앱 메트릭 기준 |
 | baseline_retry_enqueue_rate (msg/s) | **0.000** | `auth_error.retry.enqueue` counter delta / 10s | baseline assumed none |
 | baseline_dlq_rate (msg/s) | **0.000** | `auth_error.dlq` counter delta / 10s | baseline assumed none |
-| baseline_last_publish_success_epoch_ms | **1771921492091.000** | `/actuator/metrics/auth_error.publish.last_success_epoch_ms` | publish 정지 감지 |
+| baseline_publish_silence_ms | **0.000** | `clamp_min(time() * 1000 - max(auth_error_publish_last_success_epoch_ms), 0)` | publish 정지 감지 (작을수록 정상) |
 
 ---
 
 ## 3. RabbitMQ 상태 (STOP 조건 기반)
 
-| Metric | Value | Source |
+> 수집 경로: RabbitMQ Prometheus 플러그인(/metrics/detailed) 지표 사용
+
+| Metric | Value | Source (PromQL) |
 | --- | --- | --- |
-| Ready | **0.000** | `/actuator/metrics/auth_error.rabbit.ready` |
-| Unacked | **0.000** | `/actuator/metrics/auth_error.rabbit.unacked` |
-| Publish rate | **5.000** | `/actuator/metrics/auth_error.rabbit.publish_rate` |
-| Deliver rate | **5.000** | `/actuator/metrics/auth_error.rabbit.deliver_rate` |
-| Retry depth | **0.000** | `/actuator/metrics/auth_error.rabbit.retry_depth` |
-| DLQ depth | **0.000** | `/actuator/metrics/auth_error.rabbit.dlq_depth` |
+| Ready | **0.000** | `sum by (queue) (rabbitmq_detailed_queue_messages_ready{queue!=""})` |
+| Unacked | **0.000** | `sum by (queue) (rabbitmq_detailed_queue_messages_unacked{queue!=""})` |
+| Publish rate (app) | **8.68** | `sum(rate(auth_error_publish_total{result="success"}[1m]))` |
+| Deliver rate (app) | **8.68** | `sum(rate(auth_error_consume_total{result="success"}[1m]))` |
+| Retry depth | **0.000** | `sum by (queue) (rabbitmq_detailed_queue_messages_ready{queue=~".*\\.retry\\..*"} + rabbitmq_detailed_queue_messages_unacked{queue=~".*\\.retry\\..*"})` |
+| DLQ depth | **0.000** | `sum by (queue) (rabbitmq_detailed_queue_messages_ready{queue=~".*\\.dlq"} + rabbitmq_detailed_queue_messages_unacked{queue=~".*\\.dlq"})` |
 
 ---
 
@@ -66,6 +68,7 @@ Note: E2E는 **AuthErrorRecordedConsumer 완료 시점 기준**으로 측정. An
 - `publish_rate` → `auth_error.publish{result=success}` delta / 10s
 - `consume_rate` → `auth_error.consume{result=success}` delta / 10s
 - `retry_enqueue_rate` → `auth_error.retry.enqueue` delta / 10s
+- `publish_silence_ms` → `clamp_min(time() * 1000 - max(auth_error_publish_last_success_epoch_ms), 0)`
 
 > 10초 단위 증가량으로 rate 계산 (PromQL: `increase(x[10s])/10`)
 
@@ -74,12 +77,12 @@ Note: E2E는 **AuthErrorRecordedConsumer 완료 시점 기준**으로 측정. An
 - `connections.active` → `hikaricp.connections.active`
 
 ### 4.5 MQ Health
-- `Ready` → `auth_error.rabbit.ready`
-- `Unacked` → `auth_error.rabbit.unacked`
-- `publish_rate` → `auth_error.rabbit.publish_rate`
-- `deliver_rate` → `auth_error.rabbit.deliver_rate`
-- `retry_depth` → `auth_error.rabbit.retry_depth`
-- `DLQ depth` → `auth_error.rabbit.dlq_depth`
+- `Ready` → `rabbitmq_detailed_queue_messages_ready`
+- `Unacked` → `rabbitmq_detailed_queue_messages_unacked`
+- `publish_rate` → `rate(auth_error_publish_total{result="success"}[1m])`
+- `deliver_rate` → `rate(auth_error_consume_total{result="success"}[1m])`
+- `retry_depth` → `ready+unacked (queue=~".*\\.retry\\..*")`
+- `DLQ depth` → `ready+unacked (queue=~".*\\.dlq")`
 
 ---
 
