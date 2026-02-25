@@ -15,7 +15,7 @@ public class RabbitMqRestTemplateConfig {
     RestTemplate rabbitMqMetricsRestTemplate(RestTemplateBuilder builder) {
         SimpleClientHttpRequestFactory factory = new SimpleClientHttpRequestFactory();
         factory.setConnectTimeout((int) Duration.ofSeconds(2).toMillis());
-        factory.setReadTimeout((int) Duration.ofSeconds(3).toMillis());
+        factory.setReadTimeout((int) Duration.ofSeconds(5).toMillis());
         return builder
                 .requestFactory(() -> factory)
                 .build();
