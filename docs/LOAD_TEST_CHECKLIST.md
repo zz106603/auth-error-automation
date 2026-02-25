@@ -112,6 +112,7 @@ API latency만 빠른 상태는 성공이 아니다.
 - Deliver rate
 - Retry depth
 - DLQ depth
+  - 수집 경로: RabbitMQ Prometheus 플러그인(/metrics/detailed) 지표 사용
 
 ### Domain Counters (필수)
 - Publish success / fail count
