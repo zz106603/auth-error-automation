@@ -20,12 +20,16 @@ import org.springframework.scheduling.config.ScheduledTaskRegistrar;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
 import org.springframework.web.client.RestTemplate;
+import org.springframework.web.client.ResourceAccessException;
+import org.springframework.web.util.UriUtils;
 
 import java.nio.charset.StandardCharsets;
 import java.util.Base64;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicReference;
+import java.net.SocketException;
+import java.net.URI;
 
 import static com.yunhwan.auth.error.infra.metrics.MetricsConfig.*;
 
@@ -76,11 +80,9 @@ public class RabbitMqMetricsPoller implements SchedulingConfigurer {
         }
         try {
             String vhost = props.getVhost();
-            String url = props.getBaseUrl() + "/api/queues/" + vhost;
-
             HttpHeaders headers = new HttpHeaders();
             headers.add("Authorization", basicAuth(props.getUsername(), props.getPassword()));
-            ResponseEntity<String> res = restTemplate.exchange(url, HttpMethod.GET, new HttpEntity<>(headers), String.class);
+            ResponseEntity<String> res = fetchQueues(headers, vhost);
             if (!res.getStatusCode().is2xxSuccessful() || res.getBody() == null) {
                 return;
             }
@@ -118,6 +120,47 @@ public class RabbitMqMetricsPoller implements SchedulingConfigurer {
         } catch (Exception e) {
             log.warn("[RabbitMqMetrics] poll failed: {}", e.toString());
         }
+    }
+
+    private ResponseEntity<String> fetchQueues(HttpHeaders headers, String vhost) {
+        URI uri = buildQueuesUri(props.getBaseUrl(), vhost);
+        log.info("[RabbitMqMetrics] polling url={}", uri);
+        try {
+            return restTemplate.exchange(uri, HttpMethod.GET, new HttpEntity<>(headers), String.class);
+        } catch (ResourceAccessException e) {
+            if (isRetryable(e)) {
+                // single retry for transient EOF/connection reset
+                return restTemplate.exchange(uri, HttpMethod.GET, new HttpEntity<>(headers), String.class);
+            }
+            throw e;
+        }
+    }
+
+    private URI buildQueuesUri(String baseUrl, String vhost) {
+        String normalizedBase = baseUrl != null && baseUrl.endsWith("/")
+                ? baseUrl.substring(0, baseUrl.length() - 1)
+                : baseUrl;
+        String effectiveVhost = StringUtils.hasText(vhost) ? vhost : "/";
+        String encodedVhost = UriUtils.encodePathSegment(effectiveVhost, StandardCharsets.UTF_8);
+        String columns = String.join(",",
+                "name",
+                "messages_ready",
+                "messages_unacknowledged",
+                "message_stats.publish_details.rate",
+                "message_stats.deliver_details.rate"
+        );
+        String encodedColumns = UriUtils.encodeQueryParam(columns, StandardCharsets.UTF_8);
+        return URI.create(normalizedBase + "/api/queues/" + encodedVhost + "?columns=" + encodedColumns);
+    }
+
+    private boolean isRetryable(ResourceAccessException e) {
+        Throwable cause = e.getCause();
+        if (cause instanceof SocketException) {
+            String msg = cause.getMessage();
+            return msg != null && (msg.contains("Connection reset") || msg.contains("Broken pipe"));
+        }
+        String msg = e.getMessage();
+        return msg != null && msg.contains("Unexpected end of file");
     }
 
     private void recordGauge(String metric, double value, String queue, String vhost) {
