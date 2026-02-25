@@ -77,17 +77,6 @@ metrics:
   # outbox/mq 지표 수집 (테스트 기본 OFF)
   outbox-age:
     enabled: true
-  rabbit:
-    # 안정성 위해 기본 OFF (필요 시 환경변수로 ON)
-    enabled: ${METRICS_RABBIT_ENABLED:false}
-
-rabbitmq:
-  management:
-    # MQ 상태 수집용 (환경변수로 주입)
-    base-url: ${RABBIT_MGMT_URL}
-    username: ${RABBIT_USERNAME}
-    password: ${RABBIT_PASSWORD}
-    vhost: ${RABBIT_VHOST:/}
 
 auth-error:
   source-service: ${spring.application.name}

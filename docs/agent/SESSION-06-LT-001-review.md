@@ -120,7 +120,7 @@
 현재:
 
 - Actuator만으로는 제공되지 않음
-- Management API poller 필요
+- RabbitMQ Prometheus plugin(/metrics/detailed) 지표 사용
 
 ---
 
@@ -143,14 +143,14 @@
 - auth_error.dlq
 - auth_error.publish.last_success_epoch_ms
 
-### P0-4) RabbitMQ Management API 기반 poller 추가
+### P0-4) RabbitMQ plugin 지표 기반 쿼리 추가
 
-- auth_error.rabbit.ready
-- auth_error.rabbit.unacked
-- auth_error.rabbit.publish_rate
-- auth_error.rabbit.deliver_rate
-- auth_error.rabbit.retry_depth
-- auth_error.rabbit.dlq_depth
+- rabbitmq_detailed_queue_messages_ready
+- rabbitmq_detailed_queue_messages_unacked
+- rate(auth_error_publish_total{result=success}[1m])
+- rate(auth_error_consume_total{result=success}[1m])
+- ready+unacked (queue=~".*\\.retry\\..*")
+- ready+unacked (queue=~".*\\.dlq")
 
 ### P0-5) Actuator percentile histogram 설정
 
@@ -198,5 +198,5 @@
    - auth_error.dlq
    - auth_error.publish.last_success_epoch_ms
    - Hikari metrics
-   - RabbitMQ poller metrics
+   - RabbitMQ plugin metrics
 3. 결과를 LT-001-baseline.md에 표 형태로 기록 (날짜/환경 포함)
