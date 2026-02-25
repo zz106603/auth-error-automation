@@ -52,13 +52,16 @@ outbox:
     fixed-delay-ms: 5000
 
 management:
+  server:
+    port: 18081
+    address: 0.0.0.0
   endpoints:
     web:
       exposure:
-        include: health,info,metrics,env,configprops,prometheus
+        include: health,info,prometheus
   endpoint:
     health:
-      show-details: always
+      show-details: never
   metrics:
     distribution:
       percentiles-histogram:
@@ -75,7 +78,8 @@ metrics:
   outbox-age:
     enabled: true
   rabbit:
-    enabled: true
+    # 안정성 위해 기본 OFF (필요 시 환경변수로 ON)
+    enabled: ${METRICS_RABBIT_ENABLED:false}
 
 rabbitmq:
   management:
