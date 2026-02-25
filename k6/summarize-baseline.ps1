@@ -215,6 +215,28 @@ function Print-GaugeWithFallback {
     Write-Host (" - {0} = {1:N3}" -f $key, $v)
   }
 }
+
+function Sum-GaugeByQueuePattern {
+  param(
+    [string]$metricName,
+    [string]$queuePattern
+  )
+  $sum = 0.0
+  $matched = $false
+  $keys = Extract-LinesByPrefix -map $map1 -prefix ($metricName + "{")
+  foreach ($k in $keys) {
+    $labels = Parse-LabelMap -key $k
+    if ($labels.ContainsKey("queue") -and $labels["queue"] -match $queuePattern) {
+      $v = Get-ValueOrNull -map $map1 -key $k
+      if ($null -ne $v) {
+        $sum += $v
+        $matched = $true
+      }
+    }
+  }
+  if (-not $matched) { return $null }
+  return $sum
+}
 # Histogram quantile (client-side) for Prometheus histogram buckets
 # Inputs: list of buckets (le, count), already aggregated for a fixed label set
 function Histogram-Quantile {
@@ -303,19 +325,37 @@ Write-Host "## Publish last success (last snapshot)"
 Summarize-Gauge -key "auth_error_publish_last_success_epoch_ms"
 Write-Host ""
 
-Write-Host "## RabbitMQ gauges (baseline fields)"
-$readyKey = Select-GaugeKeyByQueue -metricName "auth_error_rabbit_ready" -queueValue "auth.error.recorded.q"
-Print-GaugeWithFallback -key $readyKey -displayName 'auth_error_rabbit_ready{queue="auth.error.recorded.q"}' -missingMode "na"
-$unackedKey = Select-GaugeKeyByQueue -metricName "auth_error_rabbit_unacked" -queueValue "auth.error.recorded.q"
-Print-GaugeWithFallback -key $unackedKey -displayName 'auth_error_rabbit_unacked{queue="auth.error.recorded.q"}' -missingMode "na"
-$pubRateKey = Select-GaugeKeyByQueue -metricName "auth_error_rabbit_publish_rate" -queueValue "auth.error.recorded.q"
-Print-GaugeWithFallback -key $pubRateKey -displayName 'auth_error_rabbit_publish_rate{queue="auth.error.recorded.q"}' -missingMode "na"
-$delRateKey = Select-GaugeKeyByQueue -metricName "auth_error_rabbit_deliver_rate" -queueValue "auth.error.recorded.q"
-Print-GaugeWithFallback -key $delRateKey -displayName 'auth_error_rabbit_deliver_rate{queue="auth.error.recorded.q"}' -missingMode "na"
-$retryDepthKey = Select-GaugeKeyByQueue -metricName "auth_error_rabbit_retry_depth" -queueValue "all"
-Print-GaugeWithFallback -key $retryDepthKey -displayName 'auth_error_rabbit_retry_depth{queue="all"}' -missingMode "zero"
-$dlqDepthKey = Select-GaugeKeyByQueue -metricName "auth_error_rabbit_dlq_depth" -queueValue "all"
-Print-GaugeWithFallback -key $dlqDepthKey -displayName 'auth_error_rabbit_dlq_depth{queue="all"}' -missingMode "zero"
+Write-Host "## RabbitMQ gauges (plugin metrics)"
+$readyKey = Select-GaugeKeyByQueue -metricName "rabbitmq_detailed_queue_messages_ready" -queueValue "auth.error.recorded.q"
+Print-GaugeWithFallback -key $readyKey -displayName 'rabbitmq_detailed_queue_messages_ready{queue="auth.error.recorded.q"}' -missingMode "na"
+$unackedKey = Select-GaugeKeyByQueue -metricName "rabbitmq_detailed_queue_messages_unacked" -queueValue "auth.error.recorded.q"
+Print-GaugeWithFallback -key $unackedKey -displayName 'rabbitmq_detailed_queue_messages_unacked{queue="auth.error.recorded.q"}' -missingMode "na"
+$retryReady = Sum-GaugeByQueuePattern -metricName "rabbitmq_detailed_queue_messages_ready" -queuePattern ".*\.retry\..*"
+$retryUnacked = Sum-GaugeByQueuePattern -metricName "rabbitmq_detailed_queue_messages_unacked" -queuePattern ".*\.retry\..*"
+$retryDepth = $null
+if (($null -ne $retryReady) -or ($null -ne $retryUnacked)) {
+  $retryDepth = 0.0
+  if ($null -ne $retryReady) { $retryDepth += $retryReady }
+  if ($null -ne $retryUnacked) { $retryDepth += $retryUnacked }
+}
+if ($null -eq $retryDepth) {
+  Write-Host ' - retry_depth(sum ready+unacked, queue=~".*\.retry\..*") = 0.000 (missing, assumed none)'
+} else {
+  Write-Host (" - retry_depth(sum ready+unacked, queue=~\".*\\.retry\\..*\") = {0:N3}" -f $retryDepth)
+}
+$dlqReady = Sum-GaugeByQueuePattern -metricName "rabbitmq_detailed_queue_messages_ready" -queuePattern ".*\.dlq"
+$dlqUnacked = Sum-GaugeByQueuePattern -metricName "rabbitmq_detailed_queue_messages_unacked" -queuePattern ".*\.dlq"
+$dlqDepth = $null
+if (($null -ne $dlqReady) -or ($null -ne $dlqUnacked)) {
+  $dlqDepth = 0.0
+  if ($null -ne $dlqReady) { $dlqDepth += $dlqReady }
+  if ($null -ne $dlqUnacked) { $dlqDepth += $dlqUnacked }
+}
+if ($null -eq $dlqDepth) {
+  Write-Host ' - dlq_depth(sum ready+unacked, queue=~".*\.dlq") = 0.000 (missing, assumed none)'
+} else {
+  Write-Host (" - dlq_depth(sum ready+unacked, queue=~\".*\\.dlq\") = {0:N3}" -f $dlqDepth)
+}
 Write-Host ""
 
 # 3) E2E histogram quantiles (p95/p99) from last snapshot (Recorded only)
