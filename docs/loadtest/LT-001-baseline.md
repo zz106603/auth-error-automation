@@ -1,4 +1,4 @@
-# LT-001 Baseline 결과 (Template)
+# LT-001 Baseline 결과 (Captured and Verified)
 
 ## 0. 실행 정보
 - 실행 일시(UTC): YYYY-MM-DDTHH:mm:ssZ
@@ -89,3 +89,10 @@ Note: E2E는 **AuthErrorRecordedConsumer 완료 시점 기준**으로 측정. An
 ## 5. Notes
 - E2E 측정은 recorded 이벤트에 한정.
 - client-side `client_ingest_latency_ms`는 참고용이며 STOP 조건에는 사용하지 않는다.
+
+---
+
+## Baseline Validation Summary
+- Measured: E2E latency, outbox age, ingest/publish/consume rates, retry/DLQ, Hikari pool, RabbitMQ health
+- Time window: 1m rate windows; 10s delta windows for stage throughput and retry/DLQ deltas
+- Grafana panels align with baseline-aware stop strategy (E2E, outbox age, throughput balance, retry/DLQ, pool, MQ)
