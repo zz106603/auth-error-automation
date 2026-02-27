@@ -262,6 +262,16 @@ STOP 조건:
 - 임계점 탐색
 - 어느 stage가 먼저 무너지는지 기록
 
+## LT-002 Ramp-Up Execution Runbook
+- Breaking-point detection: 어떤 조건이든 60s 이상 지속 위반 시 해당 stage를 breaking point로 확정한다.
+- Break-point 기록: stage target RPS, 위반 조건, 최초 위반 시간, 60s 지속 여부, 영향을 받은 파이프라인 단계(API/DB/Outbox/Rabbit/Consumer/Retry/DLQ)를 기록한다.
+- Execution guardrails: k6 호스트 CPU/메모리/네트워크 사용률을 모니터링하여 load generator 병목 여부를 배제한다.
+
+## LT-002 Stage Attribution (Log-Based)
+- Stage 시작 시각은 k6 로그의 `[STAGE_START]` 라인을 사용한다.
+- 예시 추출: `grep "\\[STAGE_START\\]" k6.log`
+- Grafana에서 해당 UTC timestamp 기준으로 time range를 맞추고, 그 이후 60s 지속 위반이 발생한 첫 stage를 breaking point로 기록한다.
+
 ## LT-003 Steady Load
 - 10~20분 지속
 - age 상승 추세 확인
