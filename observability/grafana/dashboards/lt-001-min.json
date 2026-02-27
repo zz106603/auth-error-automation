@@ -302,6 +302,83 @@
       "description": "publish 정지 감지용: 현재시각 - 마지막 성공시각",
       "title": "Publish Silence (ms since last success)",
       "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {"defaults": {"unit": "req/s"}, "overrides": []},
+      "gridPos": {"h": 6, "w": 8, "x": 0, "y": 36},
+      "id": 13,
+      "options": {"legend": {"showLegend": true}},
+      "targets": [
+        {
+          "expr": "sum(rate(http_server_requests_seconds_count{uri=\"/api/auth-errors\"}[1m]))",
+          "legendFormat": "auth-errors rps",
+          "refId": "A"
+        }
+      ],
+      "title": "Ingest RPS (/api/auth-errors)",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {"defaults": {"unit": "msg/s"}, "overrides": []},
+      "gridPos": {"h": 6, "w": 8, "x": 8, "y": 36},
+      "id": 14,
+      "options": {"legend": {"showLegend": true}},
+      "targets": [
+        {
+          "expr": "sum(rate(auth_error_retry_enqueue_total[1m])) or vector(0)",
+          "legendFormat": "retry enqueue",
+          "refId": "A"
+        }
+      ],
+      "title": "Retry Enqueue Rate",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {"defaults": {"unit": "msg/s"}, "overrides": []},
+      "gridPos": {"h": 6, "w": 8, "x": 16, "y": 36},
+      "id": 15,
+      "options": {"legend": {"showLegend": true}},
+      "targets": [
+        {
+          "expr": "sum(rate(auth_error_dlq_total[1m])) or vector(0)",
+          "legendFormat": "dlq rate",
+          "refId": "A"
+        }
+      ],
+      "title": "DLQ Rate",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {"defaults": {"unit": ""}, "overrides": []},
+      "gridPos": {"h": 6, "w": 12, "x": 0, "y": 42},
+      "id": 16,
+      "options": {"legend": {"showLegend": true}},
+      "targets": [
+        {
+          "expr": "sum by (queue) (rabbitmq_detailed_queue_messages_ready{queue=~\".*\\\\.retry\\\\..*\"} + rabbitmq_detailed_queue_messages_unacked{queue=~\".*\\\\.retry\\\\..*\"}) or vector(0)",
+          "legendFormat": "retry depth {{queue}}",
+          "refId": "A"
+        }
+      ],
+      "description": "Retry queue depth (ready + unacked)",
+      "title": "RabbitMQ Retry Depth",
+      "type": "timeseries"
     }
   ],
   "refresh": "5s",
