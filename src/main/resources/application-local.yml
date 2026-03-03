@@ -68,9 +68,10 @@ management:
         http.server.requests: true
         auth_error.e2e: true
         auth_error.outbox.age: true
+      maximum-expected-value:
+        auth_error.e2e: 120s
       percentiles:
         http.server.requests: 0.95,0.99
-        auth_error.e2e: 0.95,0.99
         auth_error.outbox.age: 0.95,0.99
 
 metrics:
