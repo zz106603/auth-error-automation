@@ -1,0 +1,6 @@
+spring:
+  rabbitmq:
+    listener:
+      simple:
+        concurrency: 8
+        max-concurrency: 8
