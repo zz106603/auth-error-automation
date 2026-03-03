@@ -14,6 +14,8 @@ $ErrorActionPreference = "Stop"
 
 $logPath = Join-Path $PWD "lt_002_rampup.log"
 if (Test-Path $logPath) { Remove-Item $logPath -Force }
+$resultsDir = Join-Path $LocalScriptsDir "results"
+if (-not (Test-Path $resultsDir)) { New-Item -ItemType Directory -Path $resultsDir | Out-Null }
 
 $dockerArgs = @(
   "run","--rm","-i",
@@ -22,6 +24,8 @@ $dockerArgs = @(
   "-e","K6_PROMETHEUS_RW_SERVER_URL=http://prometheus:9090/api/v1/write",
   "-e","K6_PROMETHEUS_RW_TREND_STATS=p(95),p(99),avg,max",
   "-e","K6_PROMETHEUS_RW_PUSH_INTERVAL=5s",
+  "-e","TEST_ID=$TestId",
+  "-e","RESULTS_DIR=/scripts/results",
   "-v","${LocalScriptsDir}:/scripts",
   "grafana/k6:latest","run","-o","experimental-prometheus-rw",
   "--tag","testid=$TestId",
@@ -49,6 +53,7 @@ $writer = [System.IO.StreamWriter]::new($logPath, $true)
 
 $start = Get-Date
 $found = $false
+$announced = $false
 
 while ($true) {
   while (-not $proc.StandardOutput.EndOfStream) {
@@ -69,26 +74,41 @@ while ($true) {
     if ($raw -match "\[STAGE_START\].*stage_index=$ExpectedStageIndex" -and
         $raw -match "\[STAGE_START\].*target_rps=$ExpectedTargetRps") {
       $found = $true
-      break
+      if (-not $announced) {
+        Write-Host "✅ PASS: STAGE_START detected (stage_index=$ExpectedStageIndex, target_rps=$ExpectedTargetRps)." -ForegroundColor Green
+        Write-Host "   testid=$TestId"
+        Write-Host "   log=$logPath"
+        $announced = $true
+      }
     }
   }
 
-  if (((Get-Date) - $start).TotalSeconds -ge $WaitSeconds) { break }
+  if (-not $found -and ((Get-Date) - $start).TotalSeconds -ge $WaitSeconds) { break }
+  if ($found -and $proc.HasExited -and $proc.StandardOutput.EndOfStream -and $proc.StandardError.EndOfStream) { break }
   Start-Sleep -Milliseconds 200
 }
-
-$writer.Dispose()
 
 if (-not $found) {
   Write-Host "❌ FAIL: [STAGE_START] (stage_index=$ExpectedStageIndex, target_rps=$ExpectedTargetRps) not found within $WaitSeconds sec." -ForegroundColor Red
   Write-Host "   log=$logPath" -ForegroundColor Yellow
   try { $proc.Kill() } catch {}
+  $writer.Dispose()
   exit 1
 }
 
-Write-Host "✅ PASS: STAGE_START detected (stage_index=$ExpectedStageIndex, target_rps=$ExpectedTargetRps)." -ForegroundColor Green
-Write-Host "   testid=$TestId"
-Write-Host "   log=$logPath"
+$proc.WaitForExit()
+while (-not $proc.StandardOutput.EndOfStream) {
+  $line = $proc.StandardOutput.ReadLine()
+  $writer.WriteLine($line)
+}
+while (-not $proc.StandardError.EndOfStream) {
+  $line = $proc.StandardError.ReadLine()
+  $writer.WriteLine($line)
+}
+$writer.Flush()
+$writer.Dispose()
 
-# k6는 계속 돌게 둔다 (램프업 진행)
-exit 0
+Write-Host "==> k6 finished with exit code $($proc.ExitCode)"
+Write-Host "==> Summary file: $(Join-Path $resultsDir ("lt_002_rampup-" + $TestId + ".log"))"
+
+exit $proc.ExitCode

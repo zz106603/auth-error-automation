@@ -87,6 +87,52 @@ function stageStartEpochs(startEpochMs) {
   });
 }
 
+function formatMetric(values, key) {
+  if (!values || values[key] == null) return "n/a";
+  return String(values[key]);
+}
+
+function buildSummary(data) {
+  const runMs =
+    (data && data.state && typeof data.state.testRunDurationMs === "number" && data.state.testRunDurationMs) ||
+    (data && data.state && typeof data.state.testRunDuration === "number" && data.state.testRunDuration) ||
+    TOTAL_TEST_MS;
+  const endMs = Date.now();
+  const startMs = endMs - runMs;
+  const epochs = stageStartEpochs(startMs);
+  const lines = [];
+  const metrics = (data && data.metrics) || {};
+  const checkFail = metrics.check_fail_rate && metrics.check_fail_rate.values;
+  const httpReqFailed = metrics.http_req_failed && metrics.http_req_failed.values;
+  const httpReqDuration = metrics.http_req_duration && metrics.http_req_duration.values;
+  const httpReqs = metrics.http_reqs && metrics.http_reqs.values;
+  const iterations = metrics.iterations && metrics.iterations.values;
+
+  lines.push("# LT-002 Ramp-up Summary");
+  lines.push(`test_id=${__ENV.TEST_ID || "LT-002"}`);
+  lines.push(`generated_at=${new Date(endMs).toISOString()}`);
+  lines.push(`duration_ms=${runMs}`);
+  lines.push("");
+  lines.push("[stages]");
+  for (let i = 0; i < RAMP_STAGES.length; i += 1) {
+    const stage = RAMP_STAGES[i];
+    lines.push(
+      `[STAGE_START] stage_index=${i} target_rps=${stage.target} duration=${stage.duration} timestamp=${new Date(epochs[i]).toISOString()}`
+    );
+  }
+  lines.push("");
+  lines.push("[summary]");
+  lines.push(`iterations=${formatMetric(iterations, "count")}`);
+  lines.push(`http_reqs=${formatMetric(httpReqs, "count")}`);
+  lines.push(`http_req_duration_avg=${formatMetric(httpReqDuration, "avg")}`);
+  lines.push(`http_req_duration_p95=${formatMetric(httpReqDuration, "p(95)")}`);
+  lines.push(`http_req_duration_p99=${formatMetric(httpReqDuration, "p(99)")}`);
+  lines.push(`http_req_duration_max=${formatMetric(httpReqDuration, "max")}`);
+  lines.push(`http_req_failed_rate=${formatMetric(httpReqFailed, "rate")}`);
+  lines.push(`check_fail_rate=${formatMetric(checkFail, "rate")}`);
+  return `${lines.join("\n")}\n`;
+}
+
 export const options = {
   scenarios: {
     rampup: {
@@ -180,18 +226,13 @@ export default function () {
 }
 
 export function handleSummary(data) {
-  const runMs =
-    (data && data.state && typeof data.state.testRunDurationMs === "number" && data.state.testRunDurationMs) ||
-    (data && data.state && typeof data.state.testRunDuration === "number" && data.state.testRunDuration) ||
-    TOTAL_TEST_MS;
-  const endMs = Date.now();
-  const startMs = endMs - runMs;
+  const summaryText = buildSummary(data);
+  const resultsDir = __ENV.RESULTS_DIR || "/scripts/results";
+  const testId = __ENV.TEST_ID || `LT-002-${new Date().toISOString().replace(/[:.]/g, "-")}`;
+  const fileName = `lt_002_rampup-${testId}.log`;
 
-  const epochs = stageStartEpochs(startMs);
-  for (let i = 0; i < epochs.length; i += 1) {
-    const ts = new Date(epochs[i]).toISOString();
-    const target = RAMP_STAGES[i] && typeof RAMP_STAGES[i].target === "number" ? RAMP_STAGES[i].target : "unknown";
-    console.log(`[STAGE_START] stage_index=${i} target_rps=${target} timestamp=${ts}`);
-  }
-  return {};
+  return {
+    stdout: summaryText,
+    [`${resultsDir}/${fileName}`]: summaryText,
+  };
 }
