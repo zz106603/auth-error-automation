@@ -104,3 +104,51 @@ export default function () {
   CLIENT_INGEST.add(Date.now() - Date.parse(occurredAt));
   sleep(0.1);
 }
+
+function formatMetric(values, key) {
+  if (!values || values[key] == null) return "n/a";
+  return String(values[key]);
+}
+
+function buildSummary(data) {
+  const endMs = Date.now();
+  const metrics = (data && data.metrics) || {};
+  const checkFail = metrics.check_fail_rate && metrics.check_fail_rate.values;
+  const httpReqFailed = metrics.http_req_failed && metrics.http_req_failed.values;
+  const httpReqDuration = metrics.http_req_duration && metrics.http_req_duration.values;
+  const httpReqs = metrics.http_reqs && metrics.http_reqs.values;
+  const iterations = metrics.iterations && metrics.iterations.values;
+  const clientIngest = metrics.client_ingest_latency_ms && metrics.client_ingest_latency_ms.values;
+  const lines = [];
+
+  lines.push("# LT-001 Baseline Summary");
+  lines.push(`test_id=${__ENV.TEST_ID || "LT-001"}`);
+  lines.push(`generated_at=${new Date(endMs).toISOString()}`);
+  lines.push("");
+  lines.push("[summary]");
+  lines.push(`iterations=${formatMetric(iterations, "count")}`);
+  lines.push(`http_reqs=${formatMetric(httpReqs, "count")}`);
+  lines.push(`http_req_duration_avg=${formatMetric(httpReqDuration, "avg")}`);
+  lines.push(`http_req_duration_p95=${formatMetric(httpReqDuration, "p(95)")}`);
+  lines.push(`http_req_duration_p99=${formatMetric(httpReqDuration, "p(99)")}`);
+  lines.push(`http_req_duration_max=${formatMetric(httpReqDuration, "max")}`);
+  lines.push(`http_req_failed_rate=${formatMetric(httpReqFailed, "rate")}`);
+  lines.push(`check_fail_rate=${formatMetric(checkFail, "rate")}`);
+  lines.push(`client_ingest_latency_ms_avg=${formatMetric(clientIngest, "avg")}`);
+  lines.push(`client_ingest_latency_ms_p95=${formatMetric(clientIngest, "p(95)")}`);
+  lines.push(`client_ingest_latency_ms_p99=${formatMetric(clientIngest, "p(99)")}`);
+  lines.push(`client_ingest_latency_ms_max=${formatMetric(clientIngest, "max")}`);
+  return `${lines.join("\n")}\n`;
+}
+
+export function handleSummary(data) {
+  const summaryText = buildSummary(data);
+  const resultsDir = __ENV.RESULTS_DIR || "/scripts/results";
+  const testId = __ENV.TEST_ID || `LT-001-${new Date().toISOString().replace(/[:.]/g, "-")}`;
+  const fileName = `lt_001_baseline-${testId}.log`;
+
+  return {
+    stdout: summaryText,
+    [`${resultsDir}/${fileName}`]: summaryText,
+  };
+}
