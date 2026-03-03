@@ -133,7 +133,7 @@ public class AuthErrorRecordedConsumer {
             // 4) 성공 확정
             processedMessageStore.markDone(outboxId, OffsetDateTime.now());
             // 소비 완료 시점 기준 E2E(p95/p99)
-            recordE2E(eventType, parsed);
+            recordE2E(eventType, parsed, MetricsConfig.RESULT_SUCCESS);
             // consume_rate 기준선
             consumeCounter(eventType, MetricsConfig.RESULT_SUCCESS).increment();
 
@@ -150,6 +150,8 @@ public class AuthErrorRecordedConsumer {
 
             if (decision.isDead()) {
                 processedMessageStore.markDead(outboxId, now, decision.lastError());
+                // terminal DEAD도 end-to-end 종료 상태이므로 기록한다.
+                recordE2E(eventType, parsed, MetricsConfig.RESULT_DEAD);
 
                 log.error("[AuthErrorConsumer] DEAD -> DLQ outboxId={}, err={}", outboxId, decision.lastError(), e);
                 // DLQ 전환 집계
@@ -223,14 +225,15 @@ public class AuthErrorRecordedConsumer {
         );
     }
 
-    private void recordE2E(String eventType, AuthErrorRecordedPayload payload) {
+    private void recordE2E(String eventType, AuthErrorRecordedPayload payload, String result) {
         if (payload == null || payload.occurredAt() == null) return;
         long ms = ChronoUnit.MILLIS.between(payload.occurredAt(), OffsetDateTime.now());
         if (ms < 0) return;
-        // event_type/queue만 사용
+        // event_type/queue/result만 사용
         Timer.builder(MetricsConfig.METRIC_E2E)
                 .tag(MetricsConfig.TAG_EVENT_TYPE, eventType)
                 .tag(MetricsConfig.TAG_QUEUE, RabbitTopologyConfig.Q_RECORDED)
+                .tag(MetricsConfig.TAG_RESULT, result)
                 .register(meterRegistry)
                 .record(ms, java.util.concurrent.TimeUnit.MILLISECONDS);
     }
