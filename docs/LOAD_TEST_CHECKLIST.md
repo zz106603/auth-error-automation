@@ -270,7 +270,8 @@ STOP 조건:
 ## LT-002 Stage Attribution (Log-Based)
 - Stage 시작 시각은 k6 로그의 `[STAGE_START]` 라인을 사용한다.
 - 예시 추출: `grep "\\[STAGE_START\\]" k6.log`
-- Grafana에서 해당 UTC timestamp 기준으로 time range를 맞추고, 그 이후 60s 지속 위반이 발생한 첫 stage를 breaking point로 기록한다.
+- 수동 Prometheus UI 조회 대신 `docs/loadtest/results/<test-id>/prometheus-snapshot.json` 기준으로 stage 위반/지속시간을 판정한다.
+- Grafana는 원인 진단용으로만 사용하고, 최종 보고 수치는 snapshot JSON을 source of truth로 사용한다.
 
 ## LT-003 Steady Load
 - 10~20분 지속

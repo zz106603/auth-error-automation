@@ -151,6 +151,6 @@ build/
 
 .env
 
-docs/loadtest/baseline-captures/
+docs/loadtest/results/*
 
 k6/results/*

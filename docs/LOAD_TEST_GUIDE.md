@@ -194,4 +194,19 @@ API는 빠르게 응답할 수 있다.
 >
 >
 > “요청을 끝까지 제대로 처리하느냐”를 검증하는 테스트다.
+
+---
+
+# 실행 자동화 (현재 권장)
+
+- LT-002E: `./k6/script/run-lt-002-slice-knee.ps1`
+- LT-003: `./k6/script/run-lt-003-steady.ps1`
+
+실행 후 아래 경로에 자동 결과가 생성된다.
+
+- `docs/loadtest/results/<test-id>/prometheus-snapshot.json`
+- `docs/loadtest/results/<test-id>/prometheus-snapshot.txt`
+- `docs/loadtest/results/<test-id>/<test-id>-summary.md`
+
+세부 규칙과 산출물 포맷은 `docs/loadtest/AUTOMATED_WORKFLOW.md`를 따른다.
 >
