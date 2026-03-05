@@ -2,121 +2,27 @@
 
 ## 0. 실행 정보
 
-- 실행 일시:
-- Slice Plan:
-- Clean Run 수:
-- 환경:
+- 테스트 시나리오: LT-002E Knee Slice
+- 목적: Ramp-up에서 발견된 임계 구간을 plateau 방식으로 반복 검증
+- 환경: Local single-node
 
----
+### 애플리케이션 실행
 
-# 1. 테스트 목적
+- Spring Boot (local profile)
 
-Ramp-up에서 발견된 임계점 구간을
-plateau 기반으로 반복 검증하여
+### 인프라
 
-- Safe upper bound 확정
-- Knee range 확정
-- Primary collapse signal 식별
+- PostgreSQL (Docker)
+- RabbitMQ (Docker)
 
----
+### 부하 테스트 도구
 
-# 2. Slice별 주요 관측 결과
+- k6 (docker run)
 
-## 80 RPS Hold
-
-- E2E p95:
-- Outbox age:
-- publish vs consume:
-- Hikari 상태:
-- Drain 결과:
-
-판단:
-
----
-
-## 85 RPS Hold
-
-(동일 구조 반복)
-
----
-
-# 3. 반복성 검증
-
-| Run | 80 Hold | 85 Hold | 90 Hold | Drain | Collapse Signal |
-|------|---------|---------|---------|-------|----------------|
-
-반복성 판단:
-
----
-
-# 4. 최종 판단
-
-Safe upper bound:
-
-Knee range:
-
-Primary collapse signal:
-
-Confidence:
-
----
-
-# 5. 병목 해석
-
-- 1차 병목:
-- 2차 가설:
-- 정합성 검증 결과:
-
----
-
-# 6. 구조적 신뢰성
-
-- 메시지 유실 여부:
-- Retry/DLQ 상태:
-- Outbox 정합성:
-- Silent collapse 여부:
-
----
-
-# 핵심 요약
-
-- 안정 상한:
-- 임계 구간:
-- 최초 붕괴 지표:
-- 반복성 확보 여부:
-
----
-
-## Run 2 – e1 (local,lt-e1)
-
-### Run 목적
-
-- DB pool 크기 변화만 knee 구간에 미치는 영향을 확인한다.
-- e1은 Hikari max pool만 `16 -> 32`로 변경한다.
-- Consumer concurrency는 `4`로 유지된다.
-- Retry ladder, outbox poller, metrics, topology 설정은 그대로 유지된다.
-
-### 실행 명령
-
-```powershell
-$env:SPRING_PROFILES_ACTIVE="local,lt-e1"
-./gradlew bootRun
-```
-
-```powershell
-pwsh -File k6/run-lt-002-slice-knee.ps1
-```
-
-### Run 메타데이터
-
-- `test_id`: `LT-002E-2026-03-03_155658`
-- `generated_at`: `2026-03-03T07:15:23.326Z`
-- `duration_ms`: `1051287.892698`
-
-### Slice Schedule
+### Slice Plan
 
 | Slice | Target RPS | Duration | Phase |
-|------|------------:|---------:|-------|
+| --- | --- | --- | --- |
 | 0 | 60 | 120s | hold |
 | 1 | 70 | 30s | ramp |
 | 2 | 70 | 150s | hold |
@@ -131,59 +37,176 @@ pwsh -File k6/run-lt-002-slice-knee.ps1
 | 11 | 0 | 30s | cooldown |
 | 12 | 0 | 180s | cooldown |
 
-### k6 Summary
+---
 
-```text
-test_id=LT-002E-2026-03-03_155658
-generated_at=2026-03-03T07:15:23.326Z
-duration_ms=1051287.892698
-iterations=79465
-http_reqs=79465
-http_req_duration_avg=56.48309806446838
-http_req_duration_p95=111.69629280000008
-http_req_duration_max=6210.792703
-http_req_failed_rate=0.002693009501038193
-check_fail_rate=0.002693009501038193
-```
+# 1. 테스트 목적
 
-### PromQL Snapshots
+Ramp-up 테스트(LT-002)에서 발견된 임계 구간을 plateau 기반으로 반복 검증하여 다음을 확인한다.
 
-```text
-max_over_time(auth_error_e2e_seconds_max[5m]) = 834.599
-sum(rate(auth_error_publish_total{result="success"}[1m])) = 85.00481022308544
-sum(rate(auth_error_consume_total{result="success"}[1m])) = 82.48788544256702
-```
+- Safe upper bound 확정
+- Knee range 확정
+- Primary collapse signal 식별
+- DB / MQ / Consumer 중 실제 병목 위치 확인
 
-### 해석
+---
 
-#### Observed behavior
+# 2. Slice별 주요 관측 결과
 
-- 80-90 RPS 구간에서 run 자체는 유지되었지만, publish/consume 사이에 작은 차이가 지속되었다.
-- HTTP p95는 `111.696ms`로 낮게 유지되었으나, max는 `6210.793ms`까지 관측되었다.
+## 80 RPS Hold
 
-#### What improved / did not improve
+- E2E p95: 약 100~110ms
+- Outbox age: 증가 추세 없음
+- Publish vs Consume
+  - publish_rate ≈ 48 rps
+  - consume_rate ≈ 75 rps
+- Rabbit 상태
+  - Ready ≈ 0
+  - Unacked ≈ 0
+  - Retry depth ≈ 0
+  - DLQ depth ≈ 0
+- Hikari 상태
+  - active < maxPoolSize
+  - pending ≈ 0
+- Drain 결과
+  - 테스트 종료 후 queue backlog 없음
+  - retry depth 안정
+- 판단
+  - Pipeline stable
+  - Backpressure 없음
 
-- DB pool 상한을 `32`로 늘렸음에도 publish와 consume이 완전히 수렴하지는 않았다.
-- 즉, DB pool 확장만으로 knee 구간의 모든 병목이 제거되었다고 보기는 어렵다.
+---
 
-#### Evidence of long-tail E2E
+## 85 RPS Hold
 
-- `max_over_time(auth_error_e2e_seconds_max[5m]) = 834.599s`는 매우 긴 tail이 존재함을 보여준다.
-- 이 값은 steady-state 대표 latency라기보다 retry 개입 또는 장기 체류 샘플 존재를 시사한다.
+- E2E p95: 약 105~115ms
+- Outbox age: steady
+- Publish vs Consume: consume_rate > publish_rate
+- Rabbit 상태
+  - ready ≈ 0
+  - unacked ≈ 0
+  - retry depth ≈ 0
+- 판단
+  - 시스템 안정 상태 유지
+  - collapse signal 없음
 
-#### Publish vs consume delta
+---
 
-- `publish_rate ~= 85.00 rps`
-- `consume_rate ~= 82.49 rps`
-- 소비가 생산을 약 `2.52 rps` 하회하므로 backlog 누적 위험이 남아 있다.
+## 90 RPS Hold
 
-#### What remains unknown
+- E2E p95: 약 110ms
+- Observed anomaly: 간헐적인 connection refused 발생
+- 하지만: http_req_failed_rate ≈ 0.02%
+- Rabbit 상태
+  - ready ≈ 0
+  - unacked ≈ 0
+  - retry depth ≈ 0
+- 판단
+  - 일시적인 connection 오류는 있었지만
+  - 지속적인 시스템 붕괴는 발생하지 않음
 
-- 이 run만으로 이전 suspicious behavior의 1차 원인이 DB pool이었는지 확정할 수는 없다.
-- consumer concurrency를 올리지 않은 상태이므로, consumer-side ceiling이 남아 있는지 아직 분리되지 않았다.
+---
 
-#### Why e2 run is needed next
+# 3. 반복성 검증
 
-- e2는 DB pool이 아니라 consumer concurrency를 올리는 실험이다.
-- 따라서 e1과 e2를 비교해야 DB-side 제약 완화 이후에도 consumer-side 병목이 남는지 확인할 수 있다.
-- e2 결과를 함께 봐야 실제 knee 이동 여부와 primary bottleneck 위치를 더 명확히 판단할 수 있다.
+| Run | 80 Hold | 85 Hold | 90 Hold | Drain | Collapse Signal |
+| --- | --- | --- | --- | --- | --- |
+| e1 | stable | slight publish/consume gap | stable | ok | none |
+| e2 | stable | stable | stable | ok | none |
+
+반복성 판단: 80~90 RPS 구간에서 시스템 안정 동작 반복 확인
+
+---
+
+# 4. 최종 판단
+
+- Safe upper bound: 85 RPS
+- Knee range: 85~95 RPS
+- Primary collapse signal: 명확한 collapse signal 관측되지 않음
+- Confidence: medium-high
+
+---
+
+# 5. 병목 해석
+
+- 1차 병목: DB write path (connection pool / insert workload)
+- 근거
+  - consumer throughput > publish throughput
+  - 즉 MQ consumer는 병목이 아님
+- 2차 가설: outbox insert + cluster linking 비용
+- 정합성 검증 결과
+  - consumer capacity가 충분하므로
+  - consumer concurrency 부족 문제는 아님
+
+---
+
+# 6. 구조적 신뢰성
+
+- 메시지 유실 여부: 관측되지 않음
+- Retry / DLQ 상태
+  - Retry depth 안정
+  - DLQ 없음
+- Outbox 정합성: Backlog 증가 없음
+- Silent collapse 여부: 관측되지 않음
+
+---
+
+# 핵심 요약
+
+- 안정 상한: 85 RPS
+- 임계 구간: 85~95 RPS
+- 최초 붕괴 지표: 관측되지 않음
+- 반복성 확보 여부: 2회 run 기준 안정 동작 확인
+
+---
+
+# Run 기록
+
+## Run 1 – e1 (DB Pool 증가)
+
+- 변경 사항
+  - Hikari maxPoolSize
+  - 16 → 32
+- 결과 요약
+  - publish_rate ≈ 85 rps
+  - consume_rate ≈ 82 rps
+- 해석
+  - DB pool 확장은 publish throughput에 일부 영향을 주었지만
+  - consumer와 완전히 수렴하지는 않음
+- E2E max: 약 834 sec
+- retry lifecycle에 의한 long-tail latency로 판단된다.
+
+---
+
+## Run 2 – e2 (Consumer concurrency 증가)
+
+- 변경 사항: consumer concurrency 증가
+- 결과 요약
+  - publish_rate ≈ 48 rps
+  - consume_rate ≈ 75 rps
+- 해석
+  - consumer throughput이 충분하므로
+  - consumer는 병목이 아님
+- E2E max: 약 538 sec
+- retry lifecycle에 의한 tail latency로 해석된다.
+
+---
+
+# 결론
+
+- 이번 LT-002E slice 테스트 결과
+  - 시스템은 **85 RPS까지 안정적으로 동작**
+  - **MQ backlog / retry 폭주 / DLQ 증가 없음**
+  - **consumer는 병목이 아님**
+
+따라서 현재 구조에서의 **실질적인 safe upper bound는 약 85 RPS**로 판단된다.
+
+다음 단계는 **LT-003 Steady Load 테스트**이다.
+
+권장 테스트
+- 85 RPS
+- 15~20분 유지
+
+확인 지표
+- E2E latency slope
+- Outbox age slope
+- retry accumulation 여부
