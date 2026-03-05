@@ -1,0 +1,32 @@
+{
+  "default": {
+    "error_rate_max": 0.002,
+    "server_5xx_rate_max": 0.002,
+    "p95_baseline_multiplier_max": 3.0,
+    "p99_baseline_multiplier_max": 5.0,
+    "outbox_slope_ms_per_10s_max": 1000.0,
+    "publish_consume_gap_ratio_max": 0.05,
+    "publish_consume_sustained_sec": 60,
+    "drain_time_sec_max": 300
+  },
+  "LT-002E": {
+    "error_rate_max": 0.002,
+    "server_5xx_rate_max": 0.002,
+    "p95_baseline_multiplier_max": 3.0,
+    "p99_baseline_multiplier_max": 5.0,
+    "outbox_slope_ms_per_10s_max": 1000.0,
+    "publish_consume_gap_ratio_max": 0.05,
+    "publish_consume_sustained_sec": 60,
+    "drain_time_sec_max": 180
+  },
+  "LT-003": {
+    "error_rate_max": 0.002,
+    "server_5xx_rate_max": 0.002,
+    "p95_baseline_multiplier_max": 3.0,
+    "p99_baseline_multiplier_max": 5.0,
+    "outbox_slope_ms_per_10s_max": 500.0,
+    "publish_consume_gap_ratio_max": 0.03,
+    "publish_consume_sustained_sec": 120,
+    "drain_time_sec_max": 300
+  }
+}
