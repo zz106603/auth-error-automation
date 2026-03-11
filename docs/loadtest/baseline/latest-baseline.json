@@ -1,11 +1,13 @@
-{
-  "source": "docs/loadtest/LT-001-baseline.md",
-  "captured_at": "2026-03-05T00:00:00Z",
-  "baseline_e2e_p95_ms": 548.0,
-  "baseline_e2e_p99_ms": 619.0,
-  "baseline_outbox_age_p95_ms": 0.0,
-  "baseline_outbox_age_p99_ms": 0.0,
-  "baseline_ingest_rate_rps": 4.34,
-  "baseline_publish_rate_rps": 8.68,
-  "baseline_consume_rate_rps": 8.68
+﻿{
+    "source":  "LT-001:LT-001-2026-03-10_133457",
+    "captured_at":  "2026-03-10T04:37:58.6684138+00:00",
+    "baseline_e2e_p95_ms":  646.482,
+    "baseline_e2e_p99_ms":  764.691,
+    "baseline_ingest_to_consume_p95_ms":  646.482,
+    "baseline_ingest_to_consume_p99_ms":  764.691,
+    "baseline_outbox_age_p95_ms":  0,
+    "baseline_outbox_age_p99_ms":  0,
+    "baseline_ingest_rate_rps":  4.076,
+    "baseline_publish_rate_rps":  4.07,
+    "baseline_consume_rate_rps":  4.068
 }
