@@ -3,15 +3,62 @@ param(
   [int]$IntervalSec = 10
 )
 
+Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
+
+function Resolve-PathFromRepoRoot {
+  param([string]$InputPath)
+
+  if ([string]::IsNullOrWhiteSpace($InputPath)) {
+    throw "CaptureDir is empty."
+  }
+
+  if ([System.IO.Path]::IsPathRooted($InputPath)) {
+    return [System.IO.Path]::GetFullPath($InputPath)
+  }
+
+  $repoRoot = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot "..\.."))
+  return [System.IO.Path]::GetFullPath((Join-Path $repoRoot $InputPath))
+}
+
+function Resolve-ManifestEntryPath {
+  param(
+    [string]$CaptureRoot,
+    [string]$RawPath
+  )
+
+  if ([string]::IsNullOrWhiteSpace($RawPath)) { return $null }
+  if ([System.IO.Path]::IsPathRooted($RawPath)) { return [System.IO.Path]::GetFullPath($RawPath) }
+  return [System.IO.Path]::GetFullPath((Join-Path $CaptureRoot $RawPath))
+}
 
 function Get-LatestManifest {
   param([string]$Dir)
-  $path = Join-Path $Dir "capture-manifest.txt"
-  if (-not (Test-Path $path)) {
-    throw "capture-manifest.txt not found in $Dir. Run capture-baseline.ps1 first."
+
+  if (-not (Test-Path $Dir)) {
+    throw "Capture directory not found: $Dir"
   }
-  return $path
+
+  $path = Join-Path $Dir "capture-manifest.txt"
+  if (Test-Path $path) {
+    return $path
+  }
+
+  # Backward/robust fallback: if manifest is missing but capture files exist, rebuild manifest.
+  $snapshots = @(Get-ChildItem -Path $Dir -Filter "prom-*.txt" -File -ErrorAction SilentlyContinue | Sort-Object LastWriteTime)
+  if ($snapshots.Count -ge 2) {
+    $rebuilt = Join-Path $Dir "capture-manifest.txt"
+    $snapshots.FullName | Out-File -Encoding utf8 $rebuilt
+    Write-Warning ("capture-manifest.txt was missing. Rebuilt from {0} snapshot files: {1}" -f $snapshots.Count, $rebuilt)
+    return $rebuilt
+  }
+
+  throw ("capture-manifest.txt not found in {0}.`n" +
+    "Also found only {1} snapshot files (need >=2).`n" +
+    "Run:`n" +
+    "  .\k6\script\capture-baseline.ps1 -OutDir '{0}'`n" +
+    "Then:`n" +
+    "  .\k6\script\summarize-baseline.ps1 -CaptureDir '{0}'" -f $Dir, $snapshots.Count)
 }
 
 function Parse-PromLines {
@@ -272,11 +319,26 @@ function Histogram-Quantile {
   return $sorted[$sorted.Count - 1].leNum
 }
 
+$CaptureDir = Resolve-PathFromRepoRoot -InputPath $CaptureDir
 $manifest = Get-LatestManifest -Dir $CaptureDir
-$files = Get-Content $manifest | Where-Object { $_ -and (Test-Path $_) }
+$rawEntries = @(Get-Content $manifest | ForEach-Object { $_.Trim() } | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
+$files = @()
+foreach ($entry in $rawEntries) {
+  $resolved = Resolve-ManifestEntryPath -CaptureRoot $CaptureDir -RawPath $entry
+  if ($null -eq $resolved) { continue }
+  if (Test-Path $resolved) {
+    $files += $resolved
+  } else {
+    Write-Warning ("Manifest entry not found and ignored: {0}" -f $resolved)
+  }
+}
 
 if ($files.Count -lt 2) {
-  throw "Need at least 2 snapshot files to compute deltas. Found: $($files.Count)"
+  throw ("Need at least 2 snapshot files to compute deltas. Found: {0}`n" +
+    "CaptureDir: {1}`n" +
+    "Manifest: {2}`n" +
+    "Run capture first:`n" +
+    "  .\k6\script\capture-baseline.ps1 -OutDir '{1}'" -f $files.Count, $CaptureDir, $manifest)
 }
 
 $first = $files[0]
@@ -341,7 +403,7 @@ if (($null -ne $retryReady) -or ($null -ne $retryUnacked)) {
 if ($null -eq $retryDepth) {
   Write-Host ' - retry_depth(sum ready+unacked, queue=~".*\.retry\..*") = 0.000 (missing, assumed none)'
 } else {
-  Write-Host (" - retry_depth(sum ready+unacked, queue=~\".*\\.retry\\..*\") = {0:N3}" -f $retryDepth)
+  Write-Host (' - retry_depth(sum ready+unacked, queue=~".*\.retry\..*") = {0:N3}' -f $retryDepth)
 }
 $dlqReady = Sum-GaugeByQueuePattern -metricName "rabbitmq_detailed_queue_messages_ready" -queuePattern ".*\.dlq"
 $dlqUnacked = Sum-GaugeByQueuePattern -metricName "rabbitmq_detailed_queue_messages_unacked" -queuePattern ".*\.dlq"
@@ -354,20 +416,21 @@ if (($null -ne $dlqReady) -or ($null -ne $dlqUnacked)) {
 if ($null -eq $dlqDepth) {
   Write-Host ' - dlq_depth(sum ready+unacked, queue=~".*\.dlq") = 0.000 (missing, assumed none)'
 } else {
-  Write-Host (" - dlq_depth(sum ready+unacked, queue=~\".*\\.dlq\") = {0:N3}" -f $dlqDepth)
+  Write-Host (' - dlq_depth(sum ready+unacked, queue=~".*\.dlq") = {0:N3}' -f $dlqDepth)
 }
 Write-Host ""
 
-# 3) E2E histogram quantiles (p95/p99) from last snapshot (Recorded only)
-Write-Host "## E2E (Timer histogram) p95/p99 estimated from buckets (Recorded only)"
+# 3) E2E histogram quantiles (p95/p99) from baseline window delta (Recorded queue)
+Write-Host "## E2E (Timer histogram) p95/p99 estimated from bucket DELTA in baseline window (Recorded queue)"
 # find all bucket series for auth_error_e2e_seconds_bucket
 $bucketPrefix = "auth_error_e2e_seconds_bucket{"
 $bucketKeys = Extract-LinesByPrefix -map $map1 -prefix $bucketPrefix
 if ($bucketKeys.Count -eq 0) {
   Write-Host " - auth_error_e2e_seconds_bucket: NOT FOUND"
 } else {
-  # Group by label set excluding le
-  $groups = @{}
+  # Aggregate all matching series by le using delta(last-first).
+  $buckets = New-Object System.Collections.Generic.List[Object]
+  $byLe = @{}
   foreach ($k in $bucketKeys) {
     # Extract labels content
     if ($k -match '^auth_error_e2e_seconds_bucket\{(?<labels>.*)\}$') {
@@ -383,50 +446,42 @@ if ($bucketKeys.Count -eq 0) {
       if (-not $labelMap.ContainsKey("le")) { continue }
       $leStr = $labelMap["le"]
       $leNum = if ($leStr -eq "+Inf") { [double]::PositiveInfinity } else { [double]$leStr }
+      if (-not ($labelMap.ContainsKey("event_type") -and $labelMap.ContainsKey("queue"))) { continue }
+      if ($labelMap["event_type"] -ne "auth.error.recorded.v1") { continue }
+      if ($labelMap["queue"] -ne "auth.error.recorded.q") { continue }
 
-      # build group key (remove le)
-      $labelMap.Remove("le")
-      $groupLabels = ($labelMap.Keys | Sort-Object | ForEach-Object { $_ + '="' + $labelMap[$_] + '"' }) -join ','
-      $groupKey = "auth_error_e2e_seconds_bucket{" + $groupLabels + "}"
+      $last = if ($map1.ContainsKey($k)) { [double]$map1[$k] } else { 0.0 }
+      $first = if ($map0.ContainsKey($k)) { [double]$map0[$k] } else { 0.0 }
+      $delta = $last - $first
+      if ($delta -lt 0) { $delta = 0.0 }
 
-      if (-not $groups.ContainsKey($groupKey)) {
-        $groups[$groupKey] = New-Object System.Collections.Generic.List[Object]
+      if (-not $byLe.ContainsKey($leStr)) {
+        $byLe[$leStr] = [ordered]@{
+          leNum = $leNum
+          count = 0.0
+        }
       }
-      $obj = [pscustomobject]@{ leNum = $leNum; count = $map1[$k] }
-      $groups[$groupKey].Add($obj)
+      $byLe[$leStr].count = [double]$byLe[$leStr].count + [double]$delta
     }
   }
 
-  $targetKey = $null
-  foreach ($gk in $groups.Keys) {
-    if ($gk -match '^auth_error_e2e_seconds_bucket\{(?<labels>.*)\}$') {
-      $labels = $Matches.labels
-      $pairs = $labels -split ','
-      $labelMap = @{}
-      foreach ($p in $pairs) {
-        if ($p -match '^\s*(?<key>[^=]+)="(?<val>.*)"\s*$') {
-          $labelMap[$Matches.key] = $Matches.val
-        }
-      }
-      if ($labelMap.ContainsKey("event_type") -and $labelMap.ContainsKey("queue")) {
-        if ($labelMap["event_type"] -eq "auth.error.recorded.v1" -and $labelMap["queue"] -eq "auth.error.recorded.q") {
-          $targetKey = $gk
-          break
-        }
-      }
-    }
+  foreach ($leKey in $byLe.Keys) {
+    $obj = $byLe[$leKey]
+    $buckets.Add([pscustomobject]@{
+      leNum = [double]$obj.leNum
+      count = [double]$obj.count
+    })
   }
 
-  if ($null -eq $targetKey) {
-    Write-Host " - recorded bucket group: N/A (not found)"
+  if ($buckets.Count -eq 0) {
+    Write-Host " - recorded bucket group delta: N/A (not found)"
   } else {
-    $buckets = $groups[$targetKey]
     $p95 = Histogram-Quantile -q 0.95 -buckets $buckets
     $p99 = Histogram-Quantile -q 0.99 -buckets $buckets
     $p95ms = if ($null -eq $p95 -or [double]::IsInfinity($p95)) { $null } else { $p95 * 1000.0 }
     $p99ms = if ($null -eq $p99 -or [double]::IsInfinity($p99)) { $null } else { $p99 * 1000.0 }
 
-    Write-Host " - $targetKey"
+    Write-Host " - event_type=auth.error.recorded.v1, queue=auth.error.recorded.q (delta window)"
     if ($null -eq $p95ms) { Write-Host "    p95: n/a" } else { Write-Host ("    p95: {0:N2} ms" -f $p95ms) }
     if ($null -eq $p99ms) { Write-Host "    p99: n/a" } else { Write-Host ("    p99: {0:N2} ms" -f $p99ms) }
   }
