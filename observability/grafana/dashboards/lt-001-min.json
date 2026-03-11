@@ -245,17 +245,17 @@
       "options": {"legend": {"showLegend": true}},
       "targets": [
         {
-          "expr": "histogram_quantile(0.95, sum by (le) (rate(auth_error_e2e_seconds_bucket[1m]))) or vector(0)",
-          "legendFormat": "e2e p95",
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(auth_error_ingest_to_consume_seconds_bucket{event_type=\"auth.error.recorded.v1\",queue=\"auth.error.recorded.q\",result=\"success\"}[1m]))) or vector(0)",
+          "legendFormat": "ingest->consume p95",
           "refId": "A"
         },
         {
-          "expr": "histogram_quantile(0.99, sum by (le) (rate(auth_error_e2e_seconds_bucket[1m]))) or vector(0)",
-          "legendFormat": "e2e p99",
+          "expr": "histogram_quantile(0.99, sum by (le) (rate(auth_error_ingest_to_consume_seconds_bucket{event_type=\"auth.error.recorded.v1\",queue=\"auth.error.recorded.q\",result=\"success\"}[1m]))) or vector(0)",
+          "legendFormat": "ingest->consume p99",
           "refId": "B"
         }
       ],
-      "title": "E2E Latency (p95/p99)",
+      "title": "Ingest to Consume Latency (p95/p99)",
       "type": "timeseries"
     },
     {

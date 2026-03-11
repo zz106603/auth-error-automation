@@ -11,7 +11,7 @@ scrape_configs:
   - job_name: spring-boot
     metrics_path: /actuator/prometheus
     static_configs:
-      - targets: ["host.docker.internal:18081"]
+      - targets: ["__SPRING_BOOT_METRICS_TARGET__"]
 
   - job_name: rabbitmq
     # RabbitMQ Prometheus 플러그인 상세 큐 지표 사용 (queue 라벨 기반 DLQ 분리)
