@@ -221,6 +221,16 @@ $runStart = [string](Get-PathValue -Root $snapshot -Path @("metadata", "run_wind
 $runEnd = [string](Get-PathValue -Root $snapshot -Path @("metadata", "run_window", "t_end"))
 $durationSec = [string](Get-PathValue -Root $snapshot -Path @("metadata", "run_window", "duration_sec"))
 $gitSha = [string](Get-PathValue -Root $snapshot -Path @("metadata", "git_sha"))
+$runtimeProfiles = To-Array -Value (Get-PathValue -Root $snapshot -Path @("metadata", "runtime_settings", "active_profiles"))
+$metaRuntimeHikariMax = [string](Get-PathValue -Root $snapshot -Path @("metadata", "runtime_settings", "hikari_max_pool_size"))
+$metaRuntimeConc = [string](Get-PathValue -Root $snapshot -Path @("metadata", "runtime_settings", "consumer_concurrency"))
+$metaRuntimeMaxConc = [string](Get-PathValue -Root $snapshot -Path @("metadata", "runtime_settings", "consumer_max_concurrency"))
+$metaRuntimePrefetch = [string](Get-PathValue -Root $snapshot -Path @("metadata", "runtime_settings", "consumer_prefetch"))
+$holdWindowsMeta = To-Array -Value (Get-PathValue -Root $snapshot -Path @("metadata", "hold_phase_windows"))
+$runtimeProfilesText = "n/a"
+if ((Safe-Count $runtimeProfiles) -gt 0) {
+  $runtimeProfilesText = ($runtimeProfiles -join ", ")
+}
 $verdict = [string](Get-PathValue -Root $snapshot -Path @("verdict"))
 
 if ([string]::IsNullOrWhiteSpace($scenario)) { $scenario = "n/a"; $warnings += "metadata.scenario missing" }
@@ -243,12 +253,16 @@ $anomalies = To-Array -Value (Get-Prop -Object $snapshot -Name "anomalies")
 $ingest = Get-MetricStats -Kpis $kpis -MetricName "ingest_rps"
 $httpP95 = Get-MetricStats -Kpis $kpis -MetricName "http_server_p95_seconds"
 $httpP99 = Get-MetricStats -Kpis $kpis -MetricName "http_server_p99_seconds"
-$e2eP95 = Get-MetricStats -Kpis $kpis -MetricName "e2e_p95_seconds"
-$e2eP99 = Get-MetricStats -Kpis $kpis -MetricName "e2e_p99_seconds"
-$e2eMax = Get-MetricStats -Kpis $kpis -MetricName "e2e_max_seconds"
+$clientToConsumeP95 = Get-MetricStats -Kpis $kpis -MetricName "client_event_to_consume_p95_seconds"
+$clientToConsumeP99 = Get-MetricStats -Kpis $kpis -MetricName "client_event_to_consume_p99_seconds"
+$clientToConsumeMax = Get-MetricStats -Kpis $kpis -MetricName "client_event_to_consume_max_seconds"
+$ingestToConsumeP95 = Get-MetricStats -Kpis $kpis -MetricName "ingest_to_consume_p95_seconds"
+$ingestToConsumeP99 = Get-MetricStats -Kpis $kpis -MetricName "ingest_to_consume_p99_seconds"
+$ingestToConsumeMax = Get-MetricStats -Kpis $kpis -MetricName "ingest_to_consume_max_seconds"
 $publish = Get-MetricStats -Kpis $kpis -MetricName "publish_rps"
 $consume = Get-MetricStats -Kpis $kpis -MetricName "consume_rps"
 $retry = Get-MetricStats -Kpis $kpis -MetricName "retry_enqueue_rps"
+$retryPressure = Get-MetricStats -Kpis $kpis -MetricName "retry_pressure_ratio"
 $outbox95 = Get-MetricStats -Kpis $kpis -MetricName "outbox_age_p95_ms"
 $outbox99 = Get-MetricStats -Kpis $kpis -MetricName "outbox_age_p99_ms"
 $outboxSlope = Get-MetricStats -Kpis $kpis -MetricName "outbox_age_slope_ms_per_10s"
@@ -256,6 +270,14 @@ $rReady = Get-MetricStats -Kpis $kpis -MetricName "rabbit_ready_depth"
 $rUnacked = Get-MetricStats -Kpis $kpis -MetricName "rabbit_unacked_depth"
 $rRetry = Get-MetricStats -Kpis $kpis -MetricName "rabbit_retry_depth"
 $rDlq = Get-MetricStats -Kpis $kpis -MetricName "rabbit_dlq_depth"
+$hikariActive = Get-MetricStats -Kpis $kpis -MetricName "hikari_active"
+$hikariPending = Get-MetricStats -Kpis $kpis -MetricName "hikari_pending"
+$hikariMax = Get-MetricStats -Kpis $kpis -MetricName "hikari_max"
+$ingestToConsumeOverflow = Get-MetricStats -Kpis $kpis -MetricName "ingest_to_consume_overflow_ratio_120s"
+$runtimeHikariMax = Get-MetricStats -Kpis $kpis -MetricName "runtime_hikari_max_pool_size"
+$runtimeConsumerConc = Get-MetricStats -Kpis $kpis -MetricName "runtime_consumer_concurrency"
+$runtimeConsumerMaxConc = Get-MetricStats -Kpis $kpis -MetricName "runtime_consumer_max_concurrency"
+$runtimePrefetch = Get-MetricStats -Kpis $kpis -MetricName "runtime_consumer_prefetch"
 $server5xx = Get-MetricStats -Kpis $kpis -MetricName "server_5xx_rate"
 $drainMetric = Get-Prop -Object $kpis -Name "drain_time_sec"
 
@@ -281,6 +303,9 @@ $lines.Add(("- t_start (UTC): {0}" -f $runStart))
 $lines.Add(("- t_end (UTC): {0}" -f $runEnd))
 $lines.Add(("- duration: {0} sec" -f $durationSec))
 $lines.Add(("- git SHA: {0}" -f $gitSha))
+$lines.Add(("- hold windows detected: {0}" -f (Safe-Count $holdWindowsMeta)))
+$lines.Add(("- runtime active profiles: {0}" -f $runtimeProfilesText))
+$lines.Add(("- runtime settings: hikariMax={0}, consumerConcurrency={1}, consumerMaxConcurrency={2}, prefetch={3}" -f $metaRuntimeHikariMax, $metaRuntimeConc, $metaRuntimeMaxConc, $metaRuntimePrefetch))
 $lines.Add("")
 
 $lines.Add("## 2) KPI 요약")
@@ -289,13 +314,18 @@ $lines.Add("| KPI | 대표값 | 비고 |")
 $lines.Add("| --- | --- | --- |")
 $lines.Add(("| ingest RPS | {0} | avg |" -f (FmtNum $ingest.avg 3)))
 $lines.Add(("| HTTP p95 / p99 (server, ms) | {0} / {1} | max |" -f (FmtNum (SecToMsOrNull $httpP95.max) 2), (FmtNum (SecToMsOrNull $httpP99.max) 2)))
-$lines.Add(("| E2E p95 / p99 / max (ms) | {0} / {1} / {2} | max |" -f (FmtNum (SecToMsOrNull $e2eP95.max) 2), (FmtNum (SecToMsOrNull $e2eP99.max) 2), (FmtNum (SecToMsOrNull $e2eMax.max) 2)))
+$lines.Add(("| ingest->consume p95 / p99 / max (ms) | {0} / {1} / {2} | max |" -f (FmtNum (SecToMsOrNull $ingestToConsumeP95.max) 2), (FmtNum (SecToMsOrNull $ingestToConsumeP99.max) 2), (FmtNum (SecToMsOrNull $ingestToConsumeMax.max) 2)))
+$lines.Add(("| client event->consume p95 / p99 / max (ms) | {0} / {1} / {2} | max |" -f (FmtNum (SecToMsOrNull $clientToConsumeP95.max) 2), (FmtNum (SecToMsOrNull $clientToConsumeP99.max) 2), (FmtNum (SecToMsOrNull $clientToConsumeMax.max) 2)))
 $lines.Add(("| publish / consume RPS | {0} / {1} | avg |" -f (FmtNum $publish.avg 3), (FmtNum $consume.avg 3)))
 $lines.Add(("| retry enqueue RPS | {0} | avg |" -f (FmtNum $retry.avg 3)))
+$lines.Add(("| retry pressure ratio | {0} | max |" -f (FmtPercent $retryPressure.max)))
 $lines.Add(("| outbox age p95 / p99 (ms) | {0} / {1} | max |" -f (FmtNum $outbox95.max 2), (FmtNum $outbox99.max 2)))
 $lines.Add(("| outbox age slope (ms/10s) | {0} | max |" -f (FmtNum $outboxSlope.max 2)))
 $lines.Add(("| Rabbit ready / unacked | {0} / {1} | max |" -f (FmtNum $rReady.max 3), (FmtNum $rUnacked.max 3)))
 $lines.Add(("| Rabbit retry / DLQ depth | {0} / {1} | max |" -f (FmtNum $rRetry.max 3), (FmtNum $rDlq.max 3)))
+$lines.Add(("| Hikari active / pending / max | {0} / {1} / {2} | max |" -f (FmtNum $hikariActive.max 3), (FmtNum $hikariPending.max 3), (FmtNum $hikariMax.max 3)))
+$lines.Add(("| ingest->consume overflow ratio (>120s) | {0} | max |" -f (FmtPercent $ingestToConsumeOverflow.max)))
+$lines.Add(("| Runtime config (hikari / conc / maxConc / prefetch) | {0} / {1} / {2} / {3} | captured |" -f (FmtNum $runtimeHikariMax.max 0), (FmtNum $runtimeConsumerConc.max 0), (FmtNum $runtimeConsumerMaxConc.max 0), (FmtNum $runtimePrefetch.max 0)))
 $lines.Add(("| Error rate (k6 failed) | {0} | k6 summary |" -f (FmtPercent $k6Err)))
 $lines.Add(("| Error rate (server 5xx) | {0} | max |" -f (FmtPercent $server5xx.max)))
 

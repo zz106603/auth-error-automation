@@ -237,6 +237,178 @@ function Parse-KeyValueSummary {
   return $kv
 }
 
+function Parse-DurationToSeconds {
+  param([string]$Value)
+
+  if ([string]::IsNullOrWhiteSpace($Value)) { return $null }
+  if ($Value -match '^(?<n>\d+)(?<u>ms|s|m|h)$') {
+    $n = [int]$Matches["n"]
+    $u = [string]$Matches["u"]
+    if ($u -eq "ms") { return [int][Math]::Floor($n / 1000.0) }
+    if ($u -eq "s") { return $n }
+    if ($u -eq "m") { return $n * 60 }
+    if ($u -eq "h") { return $n * 3600 }
+  }
+  return $null
+}
+
+function Parse-K6SlicePlanOrEmpty {
+  param([string]$Path)
+
+  $slices = New-Object System.Collections.Generic.List[Object]
+  if ([string]::IsNullOrWhiteSpace($Path) -or -not (Test-Path $Path)) {
+    return $slices
+  }
+
+  $lines = Get-Content $Path
+  foreach ($line in $lines) {
+    if ($line -match '^\[SLICE_START\]\s+slice_index=(?<idx>\d+)\s+target_rps=(?<rps>-?\d+)\s+duration=(?<dur>\d+(ms|s|m|h))\s+timestamp=(?<ts>\S+)$') {
+      try {
+        $idx = [int]$Matches["idx"]
+        $target = [double]$Matches["rps"]
+        $durRaw = [string]$Matches["dur"]
+        $durSec = Parse-DurationToSeconds -Value $durRaw
+        $start = [DateTimeOffset]::Parse([string]$Matches["ts"])
+        if ($null -ne $durSec) {
+          $slices.Add([pscustomobject]@{
+            slice_index = $idx
+            target_rps = $target
+            duration_sec = [int]$durSec
+            duration_raw = $durRaw
+            start_ts = [int64][Math]::Floor($start.ToUnixTimeSeconds())
+            end_ts = [int64][Math]::Floor($start.ToUnixTimeSeconds() + [int64]$durSec)
+          })
+        }
+      } catch {
+        continue
+      }
+    }
+  }
+  return $slices
+}
+
+function Build-HoldWindowsOrEmpty {
+  param(
+    [object]$Slices,
+    [int64]$RunStartSec,
+    [int64]$RunEndSec
+  )
+
+  $windows = New-Object System.Collections.Generic.List[Object]
+  $sliceArray = To-ObjectArray -Value $Slices
+  if ((Get-SafeCount $sliceArray) -eq 0) { return $windows }
+
+  foreach ($s in $sliceArray) {
+    try {
+      $target = [double]$s.target_rps
+      $durSec = [int]$s.duration_sec
+      $startTs = [int64]$s.start_ts
+      $endTs = [int64]$s.end_ts
+      # LT-002E hold phase: target > 0 and long plateau segments.
+      if ($target -gt 0 -and $durSec -ge 120) {
+        $clampedStart = [Math]::Max($RunStartSec, $startTs)
+        $clampedEnd = [Math]::Min($RunEndSec, $endTs)
+        if ($clampedEnd -gt $clampedStart) {
+          $windows.Add([pscustomobject]@{
+            slice_index = [int]$s.slice_index
+            target_rps = $target
+            duration_sec = [int]($clampedEnd - $clampedStart)
+            start_ts = [int64]$clampedStart
+            end_ts = [int64]$clampedEnd
+          })
+        }
+      }
+    } catch {
+      continue
+    }
+  }
+  return $windows
+}
+
+function Filter-PointsByWindows {
+  param(
+    [object]$Points,
+    [object]$Windows
+  )
+
+  $pointArray = To-ObjectArray -Value $Points
+  $windowArray = To-ObjectArray -Value $Windows
+  $out = New-Object System.Collections.Generic.List[Object]
+  if ((Get-SafeCount $pointArray) -eq 0) { return $out }
+  if ((Get-SafeCount $windowArray) -eq 0) { return $out }
+
+  foreach ($p in $pointArray) {
+    $ts = [int64]$p.ts
+    foreach ($w in $windowArray) {
+      $ws = [int64]$w.start_ts
+      $we = [int64]$w.end_ts
+      if ($ts -ge $ws -and $ts -lt $we) {
+        $out.Add($p)
+        break
+      }
+    }
+  }
+  return $out
+}
+
+function Find-ConsecutiveDurationSecFromPoints {
+  param(
+    [object]$Points,
+    [double]$Threshold,
+    [string]$Operator = "gt"
+  )
+
+  $pointArray = To-ObjectArray -Value $Points
+  if ((Get-SafeCount $pointArray) -lt 2) { return 0 }
+
+  $maxSec = 0
+  $curSec = 0
+  for ($i = 1; $i -lt (Get-SafeCount $pointArray); $i++) {
+    $prev = $pointArray[$i - 1]
+    $curr = $pointArray[$i]
+    $v = [double]$curr.value
+    $dt = [int][Math]::Max(0, ([int64]$curr.ts - [int64]$prev.ts))
+    if ($dt -le 0) { continue }
+
+    $cond = $false
+    if ($Operator -eq "gt") { $cond = ($v -gt $Threshold) }
+    elseif ($Operator -eq "ge") { $cond = ($v -ge $Threshold) }
+    elseif ($Operator -eq "lt") { $cond = ($v -lt $Threshold) }
+    elseif ($Operator -eq "le") { $cond = ($v -le $Threshold) }
+
+    if ($cond) {
+      $curSec += $dt
+      if ($curSec -gt $maxSec) { $maxSec = $curSec }
+    } else {
+      $curSec = 0
+    }
+  }
+  return $maxSec
+}
+
+function Find-MaxMonotonicIncreaseDurationSec {
+  param([object]$Points)
+
+  $pointArray = To-ObjectArray -Value $Points
+  if ((Get-SafeCount $pointArray) -lt 2) { return 0 }
+
+  $maxSec = 0
+  $curSec = 0
+  for ($i = 1; $i -lt (Get-SafeCount $pointArray); $i++) {
+    $prev = $pointArray[$i - 1]
+    $curr = $pointArray[$i]
+    $dt = [int][Math]::Max(0, ([int64]$curr.ts - [int64]$prev.ts))
+    if ($dt -le 0) { continue }
+    if ([double]$curr.value -ge [double]$prev.value) {
+      $curSec += $dt
+      if ($curSec -gt $maxSec) { $maxSec = $curSec }
+    } else {
+      $curSec = 0
+    }
+  }
+  return $maxSec
+}
+
 function Resolve-K6SummaryPath {
   param([string]$Dir, [string]$Id, [string]$Preferred)
 
@@ -548,6 +720,32 @@ function Detect-CounterResets {
   return $false
 }
 
+function Build-AlignedRatioPoints {
+  param(
+    [object]$NumeratorPoints,
+    [object]$DenominatorPoints
+  )
+
+  $num = To-ObjectArray -Value $NumeratorPoints
+  $den = To-ObjectArray -Value $DenominatorPoints
+  $out = New-Object System.Collections.Generic.List[Object]
+  $pairCount = [Math]::Min((Get-SafeCount $num), (Get-SafeCount $den))
+  for ($i = 0; $i -lt $pairCount; $i++) {
+    $n = [double]$num[$i].value
+    $d = [double]$den[$i].value
+    $ts = [int64]$num[$i].ts
+    $ratio = 0.0
+    if ($d -gt 0.000001) {
+      $ratio = [double]($n / $d)
+    }
+    $out.Add([pscustomobject]@{
+      ts = $ts
+      value = $ratio
+    })
+  }
+  return $out
+}
+
 $scenarioName = Resolve-Scenario -InputScenario $Scenario -Id $TestId
 Write-ParamDiagnostics -Name "TestId" -Value $TestId
 Write-ParamDiagnostics -Name "Scenario" -Value $Scenario
@@ -611,16 +809,24 @@ $startSec = To-UnixSec -Dt $runStart
 $endSec = To-UnixSec -Dt $runEnd
 $step = "${StepSec}s"
 
+$slicePlan = Parse-K6SlicePlanOrEmpty -Path $K6SummaryPath
+$holdWindows = Build-HoldWindowsOrEmpty -Slices $slicePlan -RunStartSec $startSec -RunEndSec $endSec
+
 $queries = @(
   [ordered]@{ id = "ingest_rps"; type = "range"; unit = "rps"; query = 'sum(rate(auth_error_ingest_total{result="success"}[1m]))' },
   [ordered]@{ id = "http_server_p95_seconds"; type = "range"; unit = "seconds"; query = 'histogram_quantile(0.95, sum by (le) (rate(http_server_requests_seconds_bucket{uri="/api/auth-errors"}[1m])))' },
   [ordered]@{ id = "http_server_p99_seconds"; type = "range"; unit = "seconds"; query = 'histogram_quantile(0.99, sum by (le) (rate(http_server_requests_seconds_bucket{uri="/api/auth-errors"}[1m])))' },
-  [ordered]@{ id = "e2e_p95_seconds"; type = "range"; unit = "seconds"; query = 'histogram_quantile(0.95, sum by (le) (rate(auth_error_e2e_seconds_bucket{event_type="auth.error.recorded.v1",queue="auth.error.recorded.q"}[1m])))' },
-  [ordered]@{ id = "e2e_p99_seconds"; type = "range"; unit = "seconds"; query = 'histogram_quantile(0.99, sum by (le) (rate(auth_error_e2e_seconds_bucket{event_type="auth.error.recorded.v1",queue="auth.error.recorded.q"}[1m])))' },
-  [ordered]@{ id = "e2e_max_seconds"; type = "range"; unit = "seconds"; query = 'max(auth_error_e2e_seconds_max{event_type="auth.error.recorded.v1",queue="auth.error.recorded.q"})' },
+  [ordered]@{ id = "client_event_to_consume_p95_seconds"; type = "range"; unit = "seconds"; query = 'histogram_quantile(0.95, sum by (le) (rate(auth_error_client_event_to_consume_seconds_bucket{event_type="auth.error.recorded.v1",queue="auth.error.recorded.q",result="success"}[1m])))' },
+  [ordered]@{ id = "client_event_to_consume_p99_seconds"; type = "range"; unit = "seconds"; query = 'histogram_quantile(0.99, sum by (le) (rate(auth_error_client_event_to_consume_seconds_bucket{event_type="auth.error.recorded.v1",queue="auth.error.recorded.q",result="success"}[1m])))' },
+  [ordered]@{ id = "client_event_to_consume_max_seconds"; type = "range"; unit = "seconds"; query = 'max(auth_error_client_event_to_consume_seconds_max{event_type="auth.error.recorded.v1",queue="auth.error.recorded.q",result="success"})' },
+  [ordered]@{ id = "ingest_to_consume_p95_seconds"; type = "range"; unit = "seconds"; query = 'histogram_quantile(0.95, sum by (le) (rate(auth_error_ingest_to_consume_seconds_bucket{event_type="auth.error.recorded.v1",queue="auth.error.recorded.q",result="success"}[1m])))' },
+  [ordered]@{ id = "ingest_to_consume_p99_seconds"; type = "range"; unit = "seconds"; query = 'histogram_quantile(0.99, sum by (le) (rate(auth_error_ingest_to_consume_seconds_bucket{event_type="auth.error.recorded.v1",queue="auth.error.recorded.q",result="success"}[1m])))' },
+  [ordered]@{ id = "ingest_to_consume_max_seconds"; type = "range"; unit = "seconds"; query = 'max(auth_error_ingest_to_consume_seconds_max{event_type="auth.error.recorded.v1",queue="auth.error.recorded.q",result="success"})' },
+  [ordered]@{ id = "ingest_to_consume_overflow_ratio_120s"; type = "range"; unit = "ratio"; query = 'clamp_min((sum(rate(auth_error_ingest_to_consume_seconds_count{event_type="auth.error.recorded.v1",queue="auth.error.recorded.q",result="success"}[1m])) - sum(rate(auth_error_ingest_to_consume_seconds_bucket{event_type="auth.error.recorded.v1",queue="auth.error.recorded.q",result="success",le="120.0"}[1m]))), 0) / clamp_min(sum(rate(auth_error_ingest_to_consume_seconds_count{event_type="auth.error.recorded.v1",queue="auth.error.recorded.q",result="success"}[1m])), 1e-9)' },
   [ordered]@{ id = "publish_rps"; type = "range"; unit = "rps"; query = 'sum(rate(auth_error_publish_total{event_type="auth.error.recorded.v1",result="success"}[1m]))' },
   [ordered]@{ id = "consume_rps"; type = "range"; unit = "rps"; query = 'sum(rate(auth_error_consume_total{event_type="auth.error.recorded.v1",queue="auth.error.recorded.q",result="success"}[1m]))' },
   [ordered]@{ id = "retry_enqueue_rps"; type = "range"; unit = "rps"; query = 'sum(rate(auth_error_retry_enqueue_total{event_type="auth.error.recorded.v1",queue="auth.error.recorded.q"}[1m]))' },
+  [ordered]@{ id = "retry_pressure_ratio"; type = "range"; unit = "ratio"; query = 'sum(rate(auth_error_retry_enqueue_total{event_type="auth.error.recorded.v1",queue="auth.error.recorded.q"}[1m])) / clamp_min(sum(rate(auth_error_consume_total{event_type="auth.error.recorded.v1",queue="auth.error.recorded.q",result="success"}[1m])), 1e-9)' },
   [ordered]@{ id = "outbox_age_p95_ms"; type = "range"; unit = "ms"; query = 'max(auth_error_outbox_age_p95)' },
   [ordered]@{ id = "outbox_age_p99_ms"; type = "range"; unit = "ms"; query = 'max(auth_error_outbox_age_p99)' },
   [ordered]@{ id = "outbox_age_slope_ms_per_10s"; type = "range"; unit = "ms_per_10s"; query = 'max(auth_error_outbox_age_slope_ms_per_10s)' },
@@ -628,6 +834,14 @@ $queries = @(
   [ordered]@{ id = "rabbit_unacked_depth"; type = "range"; unit = "messages"; query = 'sum(rabbitmq_detailed_queue_messages_unacked{queue="auth.error.recorded.q"})' },
   [ordered]@{ id = "rabbit_retry_depth"; type = "range"; unit = "messages"; query = 'sum(rabbitmq_detailed_queue_messages_ready{queue=~".*\\.retry\\..*"}) + sum(rabbitmq_detailed_queue_messages_unacked{queue=~".*\\.retry\\..*"})' },
   [ordered]@{ id = "rabbit_dlq_depth"; type = "range"; unit = "messages"; query = 'sum(rabbitmq_detailed_queue_messages_ready{queue=~".*\\.dlq"}) + sum(rabbitmq_detailed_queue_messages_unacked{queue=~".*\\.dlq"})' },
+  [ordered]@{ id = "hikari_active"; type = "range"; unit = "connections"; query = 'max(hikaricp_connections_active)' },
+  [ordered]@{ id = "hikari_pending"; type = "range"; unit = "connections"; query = 'max(hikaricp_connections_pending)' },
+  [ordered]@{ id = "hikari_max"; type = "range"; unit = "connections"; query = 'max(hikaricp_connections_max)' },
+  [ordered]@{ id = "runtime_hikari_max_pool_size"; type = "range"; unit = "count"; query = 'max(auth_error_runtime_hikari_max_pool_size)' },
+  [ordered]@{ id = "runtime_consumer_concurrency"; type = "range"; unit = "count"; query = 'max(auth_error_runtime_consumer_concurrency)' },
+  [ordered]@{ id = "runtime_consumer_max_concurrency"; type = "range"; unit = "count"; query = 'max(auth_error_runtime_consumer_max_concurrency)' },
+  [ordered]@{ id = "runtime_consumer_prefetch"; type = "range"; unit = "count"; query = 'max(auth_error_runtime_consumer_prefetch)' },
+  [ordered]@{ id = "runtime_active_profiles_count"; type = "range"; unit = "count"; query = 'sum(auth_error_runtime_profile_info)' },
   [ordered]@{ id = "server_5xx_rate"; type = "range"; unit = "ratio"; query = '(sum(rate(http_server_requests_seconds_count{uri="/api/auth-errors",status=~"5.."}[1m])) or vector(0)) / clamp_min((sum(rate(http_server_requests_seconds_count{uri="/api/auth-errors"}[1m])) or vector(0)), 1e-9)' },
   [ordered]@{ id = "publish_total_counter"; type = "range"; unit = "count"; query = 'sum(auth_error_publish_total{event_type="auth.error.recorded.v1",result="success"})' },
   [ordered]@{ id = "consume_total_counter"; type = "range"; unit = "count"; query = 'sum(auth_error_consume_total{event_type="auth.error.recorded.v1",queue="auth.error.recorded.q",result="success"})' }
@@ -697,19 +911,23 @@ $baseline = Load-JsonFileOrNull -Path $BaselinePath
 $rulesJson = Load-JsonFileOrNull -Path $RulesPath
 $rules = Resolve-Rules -RulesJson $rulesJson -ScenarioName $scenarioName
 
-# Derived series for sustained mismatch condition.
-$mismatchSeries = New-Object System.Collections.Generic.List[double]
+# Derived series for sustained conditions.
 $publishPts = @($seriesMap["publish_rps"])
 $consumePts = @($seriesMap["consume_rps"])
 $pairCount = [Math]::Min((Get-SafeCount $publishPts), (Get-SafeCount $consumePts))
+$mismatchPoints = New-Object System.Collections.Generic.List[Object]
 for ($i = 0; $i -lt $pairCount; $i++) {
   $p = [double]$publishPts[$i].value
   $c = [double]$consumePts[$i].value
-  if ($p -le 0.000001) {
-    $mismatchSeries.Add(0.0)
-  } else {
-    $mismatchSeries.Add([double](($p - $c) / $p))
+  $ts = [int64]$publishPts[$i].ts
+  $gap = 0.0
+  if ($p -gt 0.000001) {
+    $gap = [double](($p - $c) / $p)
   }
+  $mismatchPoints.Add([pscustomobject]@{
+    ts = $ts
+    value = $gap
+  })
 }
 
 $drainTimeSec = Read-DrainTimeSecOrNull -Dir $RunDir -RunEnd $runEnd
@@ -764,66 +982,197 @@ if ($null -eq $rules) {
     }
   }
 
-  # 2) Baseline-relative p95/p99 threshold (if baseline exists).
+  # Use hold windows for LT-002E by default.
+  $useHoldOnly = ($scenarioName -eq "LT-002E" -and (Get-SafeCount $holdWindows) -gt 0)
+  if ($scenarioName -eq "LT-002E" -and -not $useHoldOnly) {
+    Add-Check -Name "hold_windows_detected" -Status "UNKNOWN" -Detail "LT-002E hold windows not detected; fallback to full run"
+  } elseif ($useHoldOnly) {
+    Add-Check -Name "hold_windows_detected" -Status "PASS" -Detail ("hold windows detected: {0}" -f (Get-SafeCount $holdWindows))
+  }
+
+  $pipelineP95EvalPts = if ($useHoldOnly) { Filter-PointsByWindows -Points $seriesMap["ingest_to_consume_p95_seconds"] -Windows $holdWindows } else { To-ObjectArray -Value $seriesMap["ingest_to_consume_p95_seconds"] }
+  $pipelineP99EvalPts = if ($useHoldOnly) { Filter-PointsByWindows -Points $seriesMap["ingest_to_consume_p99_seconds"] -Windows $holdWindows } else { To-ObjectArray -Value $seriesMap["ingest_to_consume_p99_seconds"] }
+  $outboxSlopeEvalPts = if ($useHoldOnly) { Filter-PointsByWindows -Points $seriesMap["outbox_age_slope_ms_per_10s"] -Windows $holdWindows } else { To-ObjectArray -Value $seriesMap["outbox_age_slope_ms_per_10s"] }
+  $mismatchEvalPts = if ($useHoldOnly) { Filter-PointsByWindows -Points $mismatchPoints -Windows $holdWindows } else { To-ObjectArray -Value $mismatchPoints }
+  $retryPressureEvalPts = if ($useHoldOnly) { Filter-PointsByWindows -Points $seriesMap["retry_pressure_ratio"] -Windows $holdWindows } else { To-ObjectArray -Value $seriesMap["retry_pressure_ratio"] }
+  $hikariActiveEvalPts = if ($useHoldOnly) { Filter-PointsByWindows -Points $seriesMap["hikari_active"] -Windows $holdWindows } else { To-ObjectArray -Value $seriesMap["hikari_active"] }
+  $hikariPendingEvalPts = if ($useHoldOnly) { Filter-PointsByWindows -Points $seriesMap["hikari_pending"] -Windows $holdWindows } else { To-ObjectArray -Value $seriesMap["hikari_pending"] }
+  $hikariMaxEvalPts = if ($useHoldOnly) { Filter-PointsByWindows -Points $seriesMap["hikari_max"] -Windows $holdWindows } else { To-ObjectArray -Value $seriesMap["hikari_max"] }
+  $rabbitReadyEvalPts = if ($useHoldOnly) { Filter-PointsByWindows -Points $seriesMap["rabbit_ready_depth"] -Windows $holdWindows } else { To-ObjectArray -Value $seriesMap["rabbit_ready_depth"] }
+  $rabbitUnackedEvalPts = if ($useHoldOnly) { Filter-PointsByWindows -Points $seriesMap["rabbit_unacked_depth"] -Windows $holdWindows } else { To-ObjectArray -Value $seriesMap["rabbit_unacked_depth"] }
+  $pipelineOverflowEvalPts = if ($useHoldOnly) { Filter-PointsByWindows -Points $seriesMap["ingest_to_consume_overflow_ratio_120s"] -Windows $holdWindows } else { To-ObjectArray -Value $seriesMap["ingest_to_consume_overflow_ratio_120s"] }
+
+  $e2eNeedSec = if ($null -ne $rules["e2e_sustained_sec"]) { [int]$rules["e2e_sustained_sec"] } else { 60 }
+  $outboxNeedSec = if ($null -ne $rules["outbox_slope_sustained_sec"]) { [int]$rules["outbox_slope_sustained_sec"] } else { 30 }
+  $retryNeedSec = if ($null -ne $rules["retry_pressure_sustained_sec"]) { [int]$rules["retry_pressure_sustained_sec"] } else { 60 }
+  $hikariNeedSec = if ($null -ne $rules["hikari_saturation_sustained_sec"]) { [int]$rules["hikari_saturation_sustained_sec"] } else { 15 }
+  $readyNeedSec = if ($null -ne $rules["rabbit_ready_growth_sustained_sec"]) { [int]$rules["rabbit_ready_growth_sustained_sec"] } else { 60 }
+  $unackedNeedSec = if ($null -ne $rules["unacked_saturation_sustained_sec"]) { [int]$rules["unacked_saturation_sustained_sec"] } else { 60 }
+  $unackedRatioMax = if ($null -ne $rules["unacked_saturation_ratio_max"]) { [double]$rules["unacked_saturation_ratio_max"] } else { 0.8 }
+  $retryRatioMax = if ($null -ne $rules["retry_pressure_ratio_max"]) { [double]$rules["retry_pressure_ratio_max"] } else { 0.1 }
+  $overflowRatioMax = if ($null -ne $rules["e2e_overflow_ratio_max"]) { [double]$rules["e2e_overflow_ratio_max"] } else { 0.05 }
+  $overflowNeedSec = if ($null -ne $rules["e2e_overflow_sustained_sec"]) { [int]$rules["e2e_overflow_sustained_sec"] } else { 60 }
+
+  # 2) Baseline-relative p95/p99 sustained threshold (if baseline exists).
   if ($null -eq $baseline) {
-    Add-Check -Name "e2e_p95_vs_baseline" -Status "UNKNOWN" -Detail "baseline file missing"
-    Add-Check -Name "e2e_p99_vs_baseline" -Status "UNKNOWN" -Detail "baseline file missing"
+    Add-Check -Name "ingest_to_consume_p95_vs_baseline_sustained" -Status "UNKNOWN" -Detail "baseline file missing"
+    Add-Check -Name "ingest_to_consume_p99_vs_baseline_sustained" -Status "UNKNOWN" -Detail "baseline file missing"
   } else {
-    $baseP95ms = [double]$baseline.baseline_e2e_p95_ms
-    $baseP99ms = [double]$baseline.baseline_e2e_p99_ms
-    $curP95ms = $null
-    $curP99ms = $null
+    $baseP95ms = if ($null -ne $baseline.baseline_ingest_to_consume_p95_ms) { [double]$baseline.baseline_ingest_to_consume_p95_ms } else { [double]$baseline.baseline_e2e_p95_ms }
+    $baseP99ms = if ($null -ne $baseline.baseline_ingest_to_consume_p99_ms) { [double]$baseline.baseline_ingest_to_consume_p99_ms } else { [double]$baseline.baseline_e2e_p99_ms }
+    $limit95 = $baseP95ms * [double]$rules["p95_baseline_multiplier_max"]
+    $limit99 = $baseP99ms * [double]$rules["p99_baseline_multiplier_max"]
 
-    if ($null -ne $statsMap["e2e_p95_seconds"].max) { $curP95ms = [double]$statsMap["e2e_p95_seconds"].max * 1000.0 }
-    if ($null -ne $statsMap["e2e_p99_seconds"].max) { $curP99ms = [double]$statsMap["e2e_p99_seconds"].max * 1000.0 }
-
-    if ($null -eq $curP95ms -or $baseP95ms -le 0) {
-      Add-Check -Name "e2e_p95_vs_baseline" -Status "UNKNOWN" -Detail "missing current/baseline p95"
+    if ((Get-SafeCount $pipelineP95EvalPts) -lt 2 -or $baseP95ms -le 0) {
+      Add-Check -Name "ingest_to_consume_p95_vs_baseline_sustained" -Status "UNKNOWN" -Detail "missing eval points or baseline p95"
     } else {
-      $limit95 = $baseP95ms * [double]$rules["p95_baseline_multiplier_max"]
-      if ($curP95ms -le $limit95) {
-        Add-Check -Name "e2e_p95_vs_baseline" -Status "PASS" -Detail ("max_e2e_p95_ms={0:N2} <= {1:N2}" -f $curP95ms, $limit95)
+      $over95Pts = New-Object System.Collections.Generic.List[Object]
+      foreach ($p in $pipelineP95EvalPts) {
+        $over95Pts.Add([pscustomobject]@{ ts = [int64]$p.ts; value = ([double]$p.value * 1000.0) })
+      }
+      $s95 = Find-ConsecutiveDurationSecFromPoints -Points $over95Pts -Threshold $limit95 -Operator "gt"
+      $peak95 = ([double]$statsMap["ingest_to_consume_p95_seconds"].max) * 1000.0
+      if ($s95 -ge $e2eNeedSec) {
+        Add-Check -Name "ingest_to_consume_p95_vs_baseline_sustained" -Status "FAIL" -Detail ("ingest_to_consume_p95_ms > {0:N2} sustained {1}s (threshold {2}s), peak={3:N2}" -f $limit95, $s95, $e2eNeedSec, $peak95)
       } else {
-        Add-Check -Name "e2e_p95_vs_baseline" -Status "FAIL" -Detail ("max_e2e_p95_ms={0:N2} > {1:N2}" -f $curP95ms, $limit95)
+        Add-Check -Name "ingest_to_consume_p95_vs_baseline_sustained" -Status "PASS" -Detail ("ingest_to_consume_p95_ms > {0:N2} sustained {1}s (< {2}s), peak={3:N2}" -f $limit95, $s95, $e2eNeedSec, $peak95)
       }
     }
 
-    if ($null -eq $curP99ms -or $baseP99ms -le 0) {
-      Add-Check -Name "e2e_p99_vs_baseline" -Status "UNKNOWN" -Detail "missing current/baseline p99"
+    if ((Get-SafeCount $pipelineP99EvalPts) -lt 2 -or $baseP99ms -le 0) {
+      Add-Check -Name "ingest_to_consume_p99_vs_baseline_sustained" -Status "UNKNOWN" -Detail "missing eval points or baseline p99"
     } else {
-      $limit99 = $baseP99ms * [double]$rules["p99_baseline_multiplier_max"]
-      if ($curP99ms -le $limit99) {
-        Add-Check -Name "e2e_p99_vs_baseline" -Status "PASS" -Detail ("max_e2e_p99_ms={0:N2} <= {1:N2}" -f $curP99ms, $limit99)
+      $over99Pts = New-Object System.Collections.Generic.List[Object]
+      foreach ($p in $pipelineP99EvalPts) {
+        $over99Pts.Add([pscustomobject]@{ ts = [int64]$p.ts; value = ([double]$p.value * 1000.0) })
+      }
+      $s99 = Find-ConsecutiveDurationSecFromPoints -Points $over99Pts -Threshold $limit99 -Operator "gt"
+      $peak99 = ([double]$statsMap["ingest_to_consume_p99_seconds"].max) * 1000.0
+      if ($s99 -ge $e2eNeedSec) {
+        Add-Check -Name "ingest_to_consume_p99_vs_baseline_sustained" -Status "FAIL" -Detail ("ingest_to_consume_p99_ms > {0:N2} sustained {1}s (threshold {2}s), peak={3:N2}" -f $limit99, $s99, $e2eNeedSec, $peak99)
       } else {
-        Add-Check -Name "e2e_p99_vs_baseline" -Status "FAIL" -Detail ("max_e2e_p99_ms={0:N2} > {1:N2}" -f $curP99ms, $limit99)
+        Add-Check -Name "ingest_to_consume_p99_vs_baseline_sustained" -Status "PASS" -Detail ("ingest_to_consume_p99_ms > {0:N2} sustained {1}s (< {2}s), peak={3:N2}" -f $limit99, $s99, $e2eNeedSec, $peak99)
       }
     }
   }
 
-  # 3) Backlog growth condition.
+  # 3) Backlog growth condition (sustained).
   $slopeMax = [double]$rules["outbox_slope_ms_per_10s_max"]
-  $slopePeak = $statsMap["outbox_age_slope_ms_per_10s"].max
-  if ($null -eq $slopePeak) {
+  if ((Get-SafeCount $outboxSlopeEvalPts) -lt 2) {
     Add-Check -Name "outbox_backlog_growth" -Status "UNKNOWN" -Detail "outbox slope metric missing"
-  } elseif ([double]$slopePeak -le $slopeMax) {
-    Add-Check -Name "outbox_backlog_growth" -Status "PASS" -Detail ("outbox_slope_peak={0:N2} <= {1:N2} ms/10s" -f [double]$slopePeak, $slopeMax)
   } else {
-    Add-Check -Name "outbox_backlog_growth" -Status "FAIL" -Detail ("outbox_slope_peak={0:N2} > {1:N2} ms/10s" -f [double]$slopePeak, $slopeMax)
+    $slopePeak = $statsMap["outbox_age_slope_ms_per_10s"].max
+    $slopeSec = Find-ConsecutiveDurationSecFromPoints -Points $outboxSlopeEvalPts -Threshold $slopeMax -Operator "gt"
+    if ($slopeSec -ge $outboxNeedSec) {
+      Add-Check -Name "outbox_backlog_growth" -Status "FAIL" -Detail ("outbox_slope > {0:N2} sustained {1}s (threshold {2}s), peak={3:N2}" -f $slopeMax, $slopeSec, $outboxNeedSec, [double]$slopePeak)
+    } else {
+      Add-Check -Name "outbox_backlog_growth" -Status "PASS" -Detail ("outbox_slope > {0:N2} sustained {1}s (< {2}s), peak={3:N2}" -f $slopeMax, $slopeSec, $outboxNeedSec, [double]$slopePeak)
+    }
   }
 
   # 4) Publish/consume mismatch sustained.
   $ratioMax = [double]$rules["publish_consume_gap_ratio_max"]
   $needSec = [int]$rules["publish_consume_sustained_sec"]
-  $sustainedSec = Find-ConsecutiveDurationSec -Values $mismatchSeries -StepSeconds $StepSec -Threshold $ratioMax
-  if ($pairCount -eq 0) {
+  if ((Get-SafeCount $mismatchEvalPts) -lt 2) {
     Add-Check -Name "publish_consume_mismatch" -Status "UNKNOWN" -Detail "missing publish/consume series"
-  } elseif ($sustainedSec -ge $needSec) {
-    Add-Check -Name "publish_consume_mismatch" -Status "FAIL" -Detail ("gap_ratio > {0:P2} sustained {1}s (threshold {2}s)" -f $ratioMax, $sustainedSec, $needSec)
   } else {
-    Add-Check -Name "publish_consume_mismatch" -Status "PASS" -Detail ("gap_ratio > {0:P2} sustained {1}s (< {2}s)" -f $ratioMax, $sustainedSec, $needSec)
+    $sustainedSec = Find-ConsecutiveDurationSecFromPoints -Points $mismatchEvalPts -Threshold $ratioMax -Operator "gt"
+    $mismatchPeak = (($mismatchEvalPts | ForEach-Object { [double]$_.value }) | Measure-Object -Maximum).Maximum
+    if ($sustainedSec -ge $needSec) {
+      Add-Check -Name "publish_consume_mismatch" -Status "FAIL" -Detail ("gap_ratio > {0:P2} sustained {1}s (threshold {2}s), publish_peak={3:N3}" -f $ratioMax, $sustainedSec, $needSec, [double]$mismatchPeak)
+    } else {
+      Add-Check -Name "publish_consume_mismatch" -Status "PASS" -Detail ("gap_ratio > {0:P2} sustained {1}s (< {2}s)" -f $ratioMax, $sustainedSec, $needSec)
+    }
   }
 
-  # 5) Drain time after cooldown.
+  # 5) Retry pressure sustained.
+  if ((Get-SafeCount $retryPressureEvalPts) -lt 2) {
+    Add-Check -Name "retry_pressure" -Status "UNKNOWN" -Detail "retry pressure metric missing"
+  } else {
+    $retrySec = Find-ConsecutiveDurationSecFromPoints -Points $retryPressureEvalPts -Threshold $retryRatioMax -Operator "gt"
+    $retryPeak = $statsMap["retry_pressure_ratio"].max
+    if ($retrySec -ge $retryNeedSec) {
+      Add-Check -Name "retry_pressure" -Status "FAIL" -Detail ("retry/consume ratio > {0:P2} sustained {1}s (threshold {2}s), peak={3:P2}" -f $retryRatioMax, $retrySec, $retryNeedSec, [double]$retryPeak)
+    } else {
+      Add-Check -Name "retry_pressure" -Status "PASS" -Detail ("retry/consume ratio > {0:P2} sustained {1}s (< {2}s), peak={3:P2}" -f $retryRatioMax, $retrySec, $retryNeedSec, [double]$retryPeak)
+    }
+  }
+
+  # 6) Hikari saturation correlation (pending > 0 and active == maxPool).
+  $hikariPair = [Math]::Min([Math]::Min((Get-SafeCount $hikariActiveEvalPts), (Get-SafeCount $hikariPendingEvalPts)), (Get-SafeCount $hikariMaxEvalPts))
+  if ($hikariPair -lt 2) {
+    Add-Check -Name "hikari_pool_saturation" -Status "UNKNOWN" -Detail "hikari active/pending/max missing"
+  } else {
+    $satPts = New-Object System.Collections.Generic.List[Object]
+    for ($i = 0; $i -lt $hikariPair; $i++) {
+      $active = [double]$hikariActiveEvalPts[$i].value
+      $pending = [double]$hikariPendingEvalPts[$i].value
+      $maxPool = [double]$hikariMaxEvalPts[$i].value
+      $sat = 0.0
+      if ($pending -gt 0.0 -and [Math]::Abs($active - $maxPool) -le 0.0001) { $sat = 1.0 }
+      $satPts.Add([pscustomobject]@{ ts = [int64]$hikariActiveEvalPts[$i].ts; value = $sat })
+    }
+    $hikariSatSec = Find-ConsecutiveDurationSecFromPoints -Points $satPts -Threshold 0.5 -Operator "gt"
+    if ($hikariSatSec -ge $hikariNeedSec) {
+      Add-Check -Name "hikari_pool_saturation" -Status "FAIL" -Detail ("pending>0 AND active==max sustained {0}s (threshold {1}s)" -f $hikariSatSec, $hikariNeedSec)
+    } else {
+      Add-Check -Name "hikari_pool_saturation" -Status "PASS" -Detail ("pending>0 AND active==max sustained {0}s (< {1}s)" -f $hikariSatSec, $hikariNeedSec)
+    }
+  }
+
+  # 7) Rabbit ready monotonic growth with publish>consume lead.
+  if ((Get-SafeCount $rabbitReadyEvalPts) -lt 2 -or (Get-SafeCount $mismatchEvalPts) -lt 2) {
+    Add-Check -Name "rabbit_ready_growth" -Status "UNKNOWN" -Detail "rabbit ready or mismatch series missing"
+  } else {
+    $readyGrowSec = Find-MaxMonotonicIncreaseDurationSec -Points $rabbitReadyEvalPts
+    $publishLeadSec = Find-ConsecutiveDurationSecFromPoints -Points $mismatchEvalPts -Threshold 0.0 -Operator "gt"
+    if ($readyGrowSec -ge $readyNeedSec -and $publishLeadSec -ge $readyNeedSec) {
+      Add-Check -Name "rabbit_ready_growth" -Status "FAIL" -Detail ("ready monotonic growth {0}s and publish>consume {1}s (threshold {2}s)" -f $readyGrowSec, $publishLeadSec, $readyNeedSec)
+    } else {
+      Add-Check -Name "rabbit_ready_growth" -Status "PASS" -Detail ("ready monotonic growth {0}s, publish>consume {1}s (threshold {2}s)" -f $readyGrowSec, $publishLeadSec, $readyNeedSec)
+    }
+  }
+
+  # 8) Rabbit unacked saturation.
+  $runtimeConc = $statsMap["runtime_consumer_concurrency"].max
+  $runtimePrefetch = $statsMap["runtime_consumer_prefetch"].max
+  $capacity = $null
+  if ($null -ne $runtimeConc -and $null -ne $runtimePrefetch) {
+    $capacity = [double]$runtimeConc * [double]$runtimePrefetch
+  }
+  if ($null -eq $capacity -or $capacity -le 0 -or (Get-SafeCount $rabbitUnackedEvalPts) -lt 2) {
+    Add-Check -Name "rabbit_unacked_saturation" -Status "UNKNOWN" -Detail "missing runtime consumer capacity or unacked series"
+  } else {
+    $ratioPts = New-Object System.Collections.Generic.List[Object]
+    foreach ($p in $rabbitUnackedEvalPts) {
+      $ratioPts.Add([pscustomobject]@{
+        ts = [int64]$p.ts
+        value = ([double]$p.value / [double]$capacity)
+      })
+    }
+    $unackedSec = Find-ConsecutiveDurationSecFromPoints -Points $ratioPts -Threshold $unackedRatioMax -Operator "gt"
+    $unackedPeak = $statsMap["rabbit_unacked_depth"].max
+    if ($unackedSec -ge $unackedNeedSec) {
+      Add-Check -Name "rabbit_unacked_saturation" -Status "FAIL" -Detail ("unacked/capacity > {0:P2} sustained {1}s (threshold {2}s), peak_unacked={3:N3}, capacity={4:N3}" -f $unackedRatioMax, $unackedSec, $unackedNeedSec, [double]$unackedPeak, [double]$capacity)
+    } else {
+      Add-Check -Name "rabbit_unacked_saturation" -Status "PASS" -Detail ("unacked/capacity > {0:P2} sustained {1}s (< {2}s), peak_unacked={3:N3}, capacity={4:N3}" -f $unackedRatioMax, $unackedSec, $unackedNeedSec, [double]$unackedPeak, [double]$capacity)
+    }
+  }
+
+  # 9) E2E overflow (histogram ceiling saturation hint).
+  if ((Get-SafeCount $pipelineOverflowEvalPts) -lt 2) {
+    Add-Check -Name "ingest_to_consume_histogram_overflow" -Status "UNKNOWN" -Detail "ingest_to_consume overflow ratio unavailable"
+  } else {
+    $overflowSec = Find-ConsecutiveDurationSecFromPoints -Points $pipelineOverflowEvalPts -Threshold $overflowRatioMax -Operator "gt"
+    $overflowPeak = $statsMap["ingest_to_consume_overflow_ratio_120s"].max
+    if ($overflowSec -ge $overflowNeedSec) {
+      Add-Check -Name "ingest_to_consume_histogram_overflow" -Status "FAIL" -Detail ("ingest_to_consume_overflow_ratio_120s > {0:P2} sustained {1}s (threshold {2}s), peak={3:P2}" -f $overflowRatioMax, $overflowSec, $overflowNeedSec, [double]$overflowPeak)
+    } else {
+      Add-Check -Name "ingest_to_consume_histogram_overflow" -Status "PASS" -Detail ("ingest_to_consume_overflow_ratio_120s > {0:P2} sustained {1}s (< {2}s), peak={3:P2}" -f $overflowRatioMax, $overflowSec, $overflowNeedSec, [double]$overflowPeak)
+    }
+  }
+
+  # 10) Drain time after cooldown.
   $drainLimit = [int]$rules["drain_time_sec_max"]
   if ($null -eq $drainTimeSec) {
     Add-Check -Name "drain_time" -Status "UNKNOWN" -Detail "post_run_drain.samples.jsonl missing or no drained sample"
@@ -847,6 +1196,29 @@ try {
 } catch {
   $repoSha = "unknown"
 }
+
+$activeProfiles = @()
+try {
+  $profileSeries = Invoke-PromQuery -BaseUrl $PrometheusBaseUrl -Query 'auth_error_runtime_profile_info' -TimeSec $endSec
+  foreach ($row in @(To-ObjectArray -Value $profileSeries)) {
+    try {
+      $metric = $row.metric
+      if ($null -ne $metric -and $metric.profile) {
+        $activeProfiles += [string]$metric.profile
+      }
+    } catch {
+      continue
+    }
+  }
+  $activeProfiles = @($activeProfiles | Sort-Object -Unique)
+} catch {
+}
+
+$runtimeHikariMax = $statsMap["runtime_hikari_max_pool_size"].max
+if ($null -eq $runtimeHikariMax) { $runtimeHikariMax = $statsMap["hikari_max"].max }
+$runtimeConsumerConcurrency = $statsMap["runtime_consumer_concurrency"].max
+$runtimeConsumerMaxConcurrency = $statsMap["runtime_consumer_max_concurrency"].max
+$runtimeConsumerPrefetch = $statsMap["runtime_consumer_prefetch"].max
 
 $resultDir = Join-Path $ResultsRoot $TestId
 New-Item -ItemType Directory -Force -Path $resultDir | Out-Null
@@ -875,6 +1247,14 @@ $metadata = [ordered]@{
   source_of_truth = "prometheus_snapshot_script"
   prometheus_base_url = $PrometheusBaseUrl
   git_sha = $repoSha
+  hold_phase_windows = @(To-PlainArray -Value $holdWindows)
+  runtime_settings = [ordered]@{
+    active_profiles = @($activeProfiles)
+    hikari_max_pool_size = $runtimeHikariMax
+    consumer_concurrency = $runtimeConsumerConcurrency
+    consumer_max_concurrency = $runtimeConsumerMaxConcurrency
+    consumer_prefetch = $runtimeConsumerPrefetch
+  }
   baseline_path = if ($null -eq $baseline) { $null } else { [System.IO.Path]::GetFullPath($BaselinePath) }
   rules_path = if ($null -eq $rulesJson) { $null } else { [System.IO.Path]::GetFullPath($RulesPath) }
   k6_artifacts = [ordered]@{
@@ -935,6 +1315,12 @@ $txtLines.Add(("scenario={0}" -f $scenarioName))
 $txtLines.Add(("run_window_start={0}" -f $metadata.run_window.t_start))
 $txtLines.Add(("run_window_end={0}" -f $metadata.run_window.t_end))
 $txtLines.Add(("duration_sec={0}" -f $metadata.run_window.duration_sec))
+$txtLines.Add(("hold_windows={0}" -f (Get-SafeCount $metadata.hold_phase_windows)))
+$txtLines.Add(("runtime_hikari_max_pool_size={0}" -f $metadata.runtime_settings.hikari_max_pool_size))
+$txtLines.Add(("runtime_consumer_concurrency={0}" -f $metadata.runtime_settings.consumer_concurrency))
+$txtLines.Add(("runtime_consumer_max_concurrency={0}" -f $metadata.runtime_settings.consumer_max_concurrency))
+$txtLines.Add(("runtime_consumer_prefetch={0}" -f $metadata.runtime_settings.consumer_prefetch))
+$txtLines.Add(("runtime_active_profiles={0}" -f (($metadata.runtime_settings.active_profiles -join ","))))
 $txtLines.Add(("verdict={0}" -f $verdict))
 $txtLines.Add("")
 $txtLines.Add("[kpis]")
