@@ -65,7 +65,8 @@ class DecisionAtomicityIntegrationTest extends AbstractIntegrationTest {
         AuthErrorRecordedPayload payload = new AuthErrorRecordedPayload(
                 authError.getId(),
                 authError.getRequestId(),
-                authError.getOccurredAt()
+                authError.getOccurredAt(),
+                authError.getReceivedAt()
         );
         String payloadJson = objectMapper.writeValueAsString(payload);
 
@@ -97,7 +98,8 @@ class DecisionAtomicityIntegrationTest extends AbstractIntegrationTest {
         AuthErrorRecordedPayload payload = new AuthErrorRecordedPayload(
                 authError.getId(),
                 authError.getRequestId(),
-                authError.getOccurredAt()
+                authError.getOccurredAt(),
+                authError.getReceivedAt()
         );
         String payloadJson = objectMapper.writeValueAsString(payload);
 

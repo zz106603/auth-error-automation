@@ -50,7 +50,7 @@ class OutboxWriterIntegrationTest extends AbstractStubIntegrationTest {
         OffsetDateTime occurredAt = OffsetDateTime.now();
         String aggregateId = String.valueOf(authErrorId);
 
-        AuthErrorRecordedPayload payload = new AuthErrorRecordedPayload(authErrorId, requestId, occurredAt);
+        AuthErrorRecordedPayload payload = new AuthErrorRecordedPayload(authErrorId, requestId, occurredAt, occurredAt);
 
         // When: 메시지 적재 요청
         var saved = outboxWriter.enqueue(authErrorRecordedEventDescriptor, aggregateId, payload);
@@ -83,7 +83,7 @@ class OutboxWriterIntegrationTest extends AbstractStubIntegrationTest {
         String requestId = "REQ-2-" + UUID.randomUUID();
         OffsetDateTime occurredAt = OffsetDateTime.now();
         String aggregateId = String.valueOf(authErrorId);
-        AuthErrorRecordedPayload payload = new AuthErrorRecordedPayload(authErrorId, requestId, occurredAt);
+        AuthErrorRecordedPayload payload = new AuthErrorRecordedPayload(authErrorId, requestId, occurredAt, occurredAt);
 
         // When: 동일한 데이터로 두 번 적재 요청
         var first = outboxWriter.enqueue(authErrorRecordedEventDescriptor, aggregateId, payload);
