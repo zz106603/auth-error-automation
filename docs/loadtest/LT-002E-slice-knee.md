@@ -6,6 +6,10 @@
 - 목적: Ramp-up에서 발견된 임계 구간을 plateau 방식으로 반복 검증
 - 환경: Local single-node
 
+### 관련 문서
+
+- lower-narrow 후속 검증 결과: `docs/loadtest/LT-002E-lower-narrow.md`
+
 ### 애플리케이션 실행
 
 - Spring Boot (local profile)
