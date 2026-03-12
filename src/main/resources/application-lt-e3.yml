@@ -1,0 +1,9 @@
+spring:
+  datasource:
+    hikari:
+      maximum-pool-size: 32
+  rabbitmq:
+    listener:
+      simple:
+        concurrency: 8
+        max-concurrency: 8

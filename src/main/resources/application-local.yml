@@ -66,10 +66,12 @@ management:
     distribution:
       percentiles-histogram:
         http.server.requests: true
-        auth_error.e2e: true
+        auth_error.client_event_to_consume: true
+        auth_error.ingest_to_consume: true
         auth_error.outbox.age: true
       maximum-expected-value:
-        auth_error.e2e: 120s
+        auth_error.client_event_to_consume: 900s
+        auth_error.ingest_to_consume: 900s
       percentiles:
         http.server.requests: 0.95,0.99
         auth_error.outbox.age: 0.95,0.99
