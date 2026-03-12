@@ -27,6 +27,7 @@ import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.messaging.handler.annotation.Header;
 import org.springframework.stereotype.Component;
 
+import java.time.Clock;
 import java.time.Duration;
 import java.time.OffsetDateTime;
 import java.time.temporal.ChronoUnit;
@@ -47,6 +48,7 @@ public class AuthErrorRecordedConsumer {
     private final RetryRoutingResolver retryRoutingResolver;
     private final AuthErrorPayloadParser payloadParser;
     private final MeterRegistry meterRegistry;
+    private final Clock clock;
 
     public AuthErrorRecordedConsumer(
             RabbitTemplate rabbitTemplate,
@@ -55,7 +57,8 @@ public class AuthErrorRecordedConsumer {
             ConsumerDecisionMaker decisionMaker,
             RetryRoutingResolver retryRoutingResolver,
             AuthErrorPayloadParser payloadParser,
-            MeterRegistry meterRegistry
+            MeterRegistry meterRegistry,
+            Clock clock
     ) {
         this.rabbitTemplate = rabbitTemplate;
         this.handler = handler;
@@ -64,6 +67,7 @@ public class AuthErrorRecordedConsumer {
         this.retryRoutingResolver = retryRoutingResolver;
         this.payloadParser = payloadParser;
         this.meterRegistry = meterRegistry;
+        this.clock = clock;
     }
 
     @RabbitListener(queues = RabbitTopologyConfig.Q_RECORDED)
@@ -112,7 +116,7 @@ public class AuthErrorRecordedConsumer {
             return;
         }
 
-        OffsetDateTime now = OffsetDateTime.now();
+        OffsetDateTime now = OffsetDateTime.now(clock);
         OffsetDateTime leaseUntil = now.plusSeconds(LEASE_DURATION.getSeconds());
 
         // 2) 선점
@@ -131,9 +135,9 @@ public class AuthErrorRecordedConsumer {
             handler.handle(payload, buildHeaders(outboxId, eventType, aggregateType, currentRetry));
 
             // 4) 성공 확정
-            processedMessageStore.markDone(outboxId, OffsetDateTime.now());
-            // 소비 완료 시점 기준 E2E(p95/p99)
-            recordE2E(eventType, parsed, MetricsConfig.RESULT_SUCCESS);
+            OffsetDateTime processedAt = OffsetDateTime.now(clock);
+            processedMessageStore.markDone(outboxId, processedAt);
+            recordLatencyMetrics(eventType, parsed, MetricsConfig.RESULT_SUCCESS, processedAt);
             // consume_rate 기준선
             consumeCounter(eventType, MetricsConfig.RESULT_SUCCESS).increment();
 
@@ -150,8 +154,7 @@ public class AuthErrorRecordedConsumer {
 
             if (decision.isDead()) {
                 processedMessageStore.markDead(outboxId, now, decision.lastError());
-                // terminal DEAD도 end-to-end 종료 상태이므로 기록한다.
-                recordE2E(eventType, parsed, MetricsConfig.RESULT_DEAD);
+                recordLatencyMetrics(eventType, parsed, MetricsConfig.RESULT_DEAD, now);
 
                 log.error("[AuthErrorConsumer] DEAD -> DLQ outboxId={}, err={}", outboxId, decision.lastError(), e);
                 // DLQ 전환 집계
@@ -225,12 +228,24 @@ public class AuthErrorRecordedConsumer {
         );
     }
 
-    private void recordE2E(String eventType, AuthErrorRecordedPayload payload, String result) {
-        if (payload == null || payload.occurredAt() == null) return;
-        long ms = ChronoUnit.MILLIS.between(payload.occurredAt(), OffsetDateTime.now());
+    private void recordLatencyMetrics(String eventType,
+                                      AuthErrorRecordedPayload payload,
+                                      String result,
+                                      OffsetDateTime processedAt) {
+        if (payload == null || processedAt == null) return;
+        recordTimer(MetricsConfig.METRIC_CLIENT_EVENT_TO_CONSUME, eventType, result, payload.occurredAt(), processedAt);
+        recordTimer(MetricsConfig.METRIC_INGEST_TO_CONSUME, eventType, result, payload.receivedAt(), processedAt);
+    }
+
+    private void recordTimer(String metricName,
+                             String eventType,
+                             String result,
+                             OffsetDateTime startedAt,
+                             OffsetDateTime endedAt) {
+        if (startedAt == null || endedAt == null) return;
+        long ms = ChronoUnit.MILLIS.between(startedAt, endedAt);
         if (ms < 0) return;
-        // event_type/queue/result만 사용
-        Timer.builder(MetricsConfig.METRIC_E2E)
+        Timer.builder(metricName)
                 .tag(MetricsConfig.TAG_EVENT_TYPE, eventType)
                 .tag(MetricsConfig.TAG_QUEUE, RabbitTopologyConfig.Q_RECORDED)
                 .tag(MetricsConfig.TAG_RESULT, result)

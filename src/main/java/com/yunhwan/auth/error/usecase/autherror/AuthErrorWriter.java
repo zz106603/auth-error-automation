@@ -88,7 +88,8 @@ public class AuthErrorWriter {
             AuthErrorRecordedPayload payload = new AuthErrorRecordedPayload(
                     saved.getId(),
                     saved.getRequestId(),
-                    saved.getOccurredAt()
+                    saved.getOccurredAt(),
+                    saved.getReceivedAt()
             );
 
             OutboxMessage outbox = outboxWriter.enqueue(
@@ -118,7 +119,8 @@ public class AuthErrorWriter {
         AuthErrorRecordedPayload payload = new AuthErrorRecordedPayload(
                 existing.getId(),
                 existing.getRequestId(),
-                existing.getOccurredAt()
+                existing.getOccurredAt(),
+                existing.getReceivedAt()
         );
         String idemKey = authErrorRecordedEventDescriptor.idempotencyKey(payload);
         OutboxMessage outbox = outboxMessageStore.findByIdempotencyKey(idemKey)

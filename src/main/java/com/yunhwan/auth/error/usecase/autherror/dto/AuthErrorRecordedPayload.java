@@ -5,5 +5,6 @@ import java.time.OffsetDateTime;
 public record AuthErrorRecordedPayload(
         Long authErrorId,
         String requestId,
-        OffsetDateTime occurredAt
+        OffsetDateTime occurredAt,
+        OffsetDateTime receivedAt
 ) {}
