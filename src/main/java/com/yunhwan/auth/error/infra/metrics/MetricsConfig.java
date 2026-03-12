@@ -10,12 +10,18 @@ public final class MetricsConfig {
     public static final String METRIC_CONSUME = "auth_error.consume";
     public static final String METRIC_RETRY_ENQUEUE = "auth_error.retry.enqueue";
     public static final String METRIC_DLQ = "auth_error.dlq";
-    public static final String METRIC_E2E = "auth_error.e2e";
+    public static final String METRIC_CLIENT_EVENT_TO_CONSUME = "auth_error.client_event_to_consume";
+    public static final String METRIC_INGEST_TO_CONSUME = "auth_error.ingest_to_consume";
     public static final String METRIC_OUTBOX_AGE = "auth_error.outbox.age";
     public static final String METRIC_OUTBOX_AGE_P95 = "auth_error.outbox.age.p95";
     public static final String METRIC_OUTBOX_AGE_P99 = "auth_error.outbox.age.p99";
     public static final String METRIC_OUTBOX_AGE_SLOPE = "auth_error.outbox.age.slope_ms_per_10s";
     public static final String METRIC_PUBLISH_LAST_SUCCESS_EPOCH_MS = "auth_error.publish.last_success_epoch_ms";
+    public static final String METRIC_RUNTIME_HIKARI_MAX_POOL_SIZE = "auth_error.runtime.hikari.max_pool_size";
+    public static final String METRIC_RUNTIME_CONSUMER_CONCURRENCY = "auth_error.runtime.consumer.concurrency";
+    public static final String METRIC_RUNTIME_CONSUMER_MAX_CONCURRENCY = "auth_error.runtime.consumer.max_concurrency";
+    public static final String METRIC_RUNTIME_CONSUMER_PREFETCH = "auth_error.runtime.consumer.prefetch";
+    public static final String METRIC_RUNTIME_PROFILE_INFO = "auth_error.runtime.profile.info";
 
     // 고카디널리티 금지(요청ID/에러메시지/스택 제외)
     public static final String TAG_EVENT_TYPE = "event_type";
@@ -24,6 +30,7 @@ public final class MetricsConfig {
     public static final String TAG_RETRY_BUCKET = "retry_bucket";
     public static final String TAG_REASON = "reason";
     public static final String TAG_QUEUE_TYPE = "queue_type";
+    public static final String TAG_PROFILE = "profile";
 
     // 고정 결과값(집계 안정성)
     public static final String RESULT_SUCCESS = "success";
