@@ -3,9 +3,13 @@ services:
     image: prom/prometheus:v2.52.0
     container_name: auth_pipeline_prometheus
     restart: unless-stopped
+    entrypoint:
+      - /bin/sh
+      - -c
     command:
-      - "--config.file=/etc/prometheus/prometheus.yml"
-      - "--web.enable-remote-write-receiver"
+      - 'target="$${SPRING_BOOT_METRICS_TARGET:-host.docker.internal:18081}"; sed "s#__SPRING_BOOT_METRICS_TARGET__#$$target#g" /etc/prometheus/prometheus.yml > /tmp/prometheus.yml; exec /bin/prometheus --config.file=/tmp/prometheus.yml --web.enable-remote-write-receiver'
+    environment:
+      SPRING_BOOT_METRICS_TARGET: ${SPRING_BOOT_METRICS_TARGET:-host.docker.internal:18081}
     ports:
       - "127.0.0.1:9090:9090"
     volumes:
@@ -24,7 +28,7 @@ services:
       GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASSWORD}
       GF_USERS_ALLOW_SIGN_UP: "false"
     ports:
-      - "127.0.0.1:3000:3000"
+      - "3000:3000"
     volumes:
       - ./observability/grafana/provisioning:/etc/grafana/provisioning:ro
       - ./observability/grafana/dashboards:/var/lib/grafana/dashboards:ro
