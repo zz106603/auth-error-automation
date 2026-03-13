@@ -11,7 +11,10 @@ param(
   [int]$DrainTimeoutSec = 300,
   [string]$ResultsRoot = "docs/loadtest/results",
   [string]$BaselinePath = "docs/loadtest/baseline/latest-baseline.json",
-  [string]$RulesPath = "k6/loadtest-acceptance-rules.json"
+  [string]$RulesPath = "k6/loadtest-acceptance-rules.json",
+  [string]$Profile = "local-single-node",
+  [switch]$ResetStateBeforeRun,
+  [switch]$ResetPurgeAllQueues
 )
 
 Set-StrictMode -Version Latest
@@ -29,8 +32,19 @@ $logPath = Join-Path $runDir "lt_003_steady.stdout.log"
 $k6SummaryPath = Join-Path $runDir ("lt_003_steady-" + $TestId + ".log")
 if (Test-Path $logPath) { Remove-Item $logPath -Force }
 
-$postRunDrain = Join-Path $PSScriptRoot "verify-lt-002e-drain.ps1"
+$postRunDrain = Join-Path $PSScriptRoot "verify-loadtest-drain.ps1"
 $captureAndReport = Join-Path $PSScriptRoot "capture-and-report-loadtest.ps1"
+$resetStateScript = Join-Path $PSScriptRoot "reset-loadtest-state.ps1"
+
+if ($ResetStateBeforeRun.IsPresent) {
+  Write-Host "==> Reset load-test state"
+  $purgeAllQueues = $ResetPurgeAllQueues.IsPresent
+  & $resetStateScript -PurgeAllQueues:$purgeAllQueues
+  if ($LASTEXITCODE -ne 0) {
+    Write-Host "==> Reset load-test state failed (exit=$LASTEXITCODE)" -ForegroundColor Red
+    exit $LASTEXITCODE
+  }
+}
 
 $dockerArgs = @(
   "run","--rm","-i",
@@ -118,7 +132,7 @@ if ($proc.ExitCode -eq 0) {
     -StepSec 5 `
     -BaselinePath $BaselinePath `
     -RulesPath $RulesPath `
-    -Profile "local-single-node"
+    -Profile $Profile
 
   if ($LASTEXITCODE -ne 0) {
     Write-Host "==> Snapshot/report generation failed (exit=$LASTEXITCODE)" -ForegroundColor Yellow

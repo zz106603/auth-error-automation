@@ -12,7 +12,10 @@ param(
   [string]$RulesPath = "k6/loadtest-acceptance-rules.json",
   [int]$WaitSeconds = 20,
   [int]$ExpectedStageIndex = 0,
-  [int]$ExpectedTargetRps = 5
+  [int]$ExpectedTargetRps = 5,
+  [string]$Profile = "local-single-node",
+  [switch]$ResetStateBeforeRun,
+  [switch]$ResetPurgeAllQueues
 )
 
 Set-StrictMode -Version Latest
@@ -29,8 +32,19 @@ New-Item -ItemType Directory -Force -Path $runDir | Out-Null
 $logPath = Join-Path $runDir "lt_002_rampup.stdout.log"
 $k6SummaryPath = Join-Path $runDir ("lt_002_rampup-" + $TestId + ".log")
 if (Test-Path $logPath) { Remove-Item $logPath -Force }
-$postRunDrain = Join-Path $PSScriptRoot "verify-lt-002e-drain.ps1"
+$postRunDrain = Join-Path $PSScriptRoot "verify-loadtest-drain.ps1"
 $captureAndReport = Join-Path $PSScriptRoot "capture-and-report-loadtest.ps1"
+$resetStateScript = Join-Path $PSScriptRoot "reset-loadtest-state.ps1"
+
+if ($ResetStateBeforeRun.IsPresent) {
+  Write-Host "==> Reset load-test state"
+  $purgeAllQueues = $ResetPurgeAllQueues.IsPresent
+  & $resetStateScript -PurgeAllQueues:$purgeAllQueues
+  if ($LASTEXITCODE -ne 0) {
+    Write-Host "==> Reset load-test state failed (exit=$LASTEXITCODE)" -ForegroundColor Red
+    exit $LASTEXITCODE
+  }
+}
 
 $dockerArgs = @(
   "run","--rm","-i",
@@ -152,7 +166,7 @@ if ($proc.ExitCode -eq 0) {
     -StepSec 5 `
     -BaselinePath $BaselinePath `
     -RulesPath $RulesPath `
-    -Profile "local-single-node"
+    -Profile $Profile
 
   if ($LASTEXITCODE -ne 0) {
     Write-Host "==> Snapshot/report generation failed (exit=$LASTEXITCODE)" -ForegroundColor Yellow
