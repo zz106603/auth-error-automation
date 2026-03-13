@@ -5,21 +5,44 @@ import { Rate } from "k6/metrics";
 
 const CHECK_FAIL = new Rate("check_fail_rate");
 
-const KNEE_STAGES = [
-  { target: 60, duration: "120s" },
-  { target: 70, duration: "30s" },
-  { target: 70, duration: "150s" },
-  { target: 75, duration: "30s" },
-  { target: 75, duration: "150s" },
-  { target: 80, duration: "30s" },
-  { target: 80, duration: "150s" },
-  { target: 85, duration: "30s" },
-  { target: 85, duration: "150s" },
-  { target: 90, duration: "30s" },
-  { target: 90, duration: "150s" },
-  { target: 0, duration: "30s" },
-  { target: 0, duration: "180s" },
-];
+const SLICE_PROFILES = {
+  default: [
+    { target: 60, duration: "120s" },
+    { target: 70, duration: "30s" },
+    { target: 70, duration: "150s" },
+    { target: 75, duration: "30s" },
+    { target: 75, duration: "150s" },
+    { target: 80, duration: "30s" },
+    { target: 80, duration: "150s" },
+    { target: 85, duration: "30s" },
+    { target: 85, duration: "150s" },
+    { target: 90, duration: "30s" },
+    { target: 90, duration: "150s" },
+    { target: 0, duration: "30s" },
+    { target: 0, duration: "180s" },
+  ],
+  "lower-narrow": [
+    { target: 50, duration: "120s" },
+    { target: 60, duration: "30s" },
+    { target: 60, duration: "150s" },
+    { target: 65, duration: "30s" },
+    { target: 65, duration: "150s" },
+    { target: 70, duration: "30s" },
+    { target: 70, duration: "150s" },
+    { target: 75, duration: "30s" },
+    { target: 75, duration: "150s" },
+    { target: 0, duration: "30s" },
+    { target: 0, duration: "180s" },
+  ],
+};
+
+function resolveSliceProfileName() {
+  const raw = (__ENV.SLICE_PROFILE || "default").trim();
+  return Object.prototype.hasOwnProperty.call(SLICE_PROFILES, raw) ? raw : "default";
+}
+
+const SLICE_PROFILE = resolveSliceProfileName();
+const KNEE_STAGES = SLICE_PROFILES[SLICE_PROFILE];
 
 let lastLoggedStageIndex = -1;
 
@@ -104,6 +127,7 @@ function buildSummary(data) {
 
   lines.push("# LT-002E Knee Slice Summary");
   lines.push(`test_id=${__ENV.TEST_ID || "LT-002E"}`);
+  lines.push(`slice_profile=${SLICE_PROFILE}`);
   lines.push(`generated_at=${new Date(endMs).toISOString()}`);
   lines.push(`duration_ms=${runMs}`);
   lines.push("");
@@ -146,12 +170,12 @@ export const options = {
   scenarios: {
     knee_slice: {
       executor: "ramping-arrival-rate",
-      startRate: 60,
+      startRate: KNEE_STAGES[0].target,
       timeUnit: "1s",
       preAllocatedVUs: 100,
       maxVUs: 500,
       stages: KNEE_STAGES,
-      tags: { lt: "LT-002E", phase: "knee-slice" },
+      tags: { lt: "LT-002E", phase: "knee-slice", slice_profile: SLICE_PROFILE },
     },
   },
 };
@@ -192,6 +216,7 @@ export default function () {
     "X-App-Name": __ENV.APP_NAME || "auth-error-automation",
     "X-Env": __ENV.ENV || "local",
     "X-LT-Name": "LT-002E",
+    "X-LT-Slice-Profile": SLICE_PROFILE,
     "X-LT-Stage": stageTag,
     "X-LT-Target-RPS": stageTarget != null ? String(stageTarget) : "unknown",
   };
@@ -207,6 +232,7 @@ export default function () {
       api: "auth-errors",
       lt: "LT-002E",
       phase: "knee-slice",
+      slice_profile: SLICE_PROFILE,
       stage: stageTag,
       target_rps: stageTarget != null ? String(stageTarget) : "unknown",
       app: __ENV.APP_NAME || "auth-error-automation",
