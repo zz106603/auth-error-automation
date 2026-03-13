@@ -259,6 +259,30 @@ $clientToConsumeMax = Get-MetricStats -Kpis $kpis -MetricName "client_event_to_c
 $ingestToConsumeP95 = Get-MetricStats -Kpis $kpis -MetricName "ingest_to_consume_p95_seconds"
 $ingestToConsumeP99 = Get-MetricStats -Kpis $kpis -MetricName "ingest_to_consume_p99_seconds"
 $ingestToConsumeMax = Get-MetricStats -Kpis $kpis -MetricName "ingest_to_consume_max_seconds"
+$recordedConsumerClaimSetupP95 = Get-MetricStats -Kpis $kpis -MetricName "recorded_consumer_claim_setup_p95_seconds"
+$recordedConsumerClaimSetupMax = Get-MetricStats -Kpis $kpis -MetricName "recorded_consumer_claim_setup_max_seconds"
+$recordedConsumerHandlerP95 = Get-MetricStats -Kpis $kpis -MetricName "recorded_consumer_handler_p95_seconds"
+$recordedConsumerHandlerMax = Get-MetricStats -Kpis $kpis -MetricName "recorded_consumer_handler_max_seconds"
+$recordedConsumerPostHandlerCompletionP95 = Get-MetricStats -Kpis $kpis -MetricName "recorded_consumer_post_handler_completion_p95_seconds"
+$recordedConsumerPostHandlerCompletionMax = Get-MetricStats -Kpis $kpis -MetricName "recorded_consumer_post_handler_completion_max_seconds"
+$recordedHandlerPayloadParseP95 = Get-MetricStats -Kpis $kpis -MetricName "recorded_handler_payload_parse_p95_seconds"
+$recordedHandlerPayloadParseMax = Get-MetricStats -Kpis $kpis -MetricName "recorded_handler_payload_parse_max_seconds"
+$recordedHandlerAuthErrorLookupP95 = Get-MetricStats -Kpis $kpis -MetricName "recorded_handler_auth_error_lookup_p95_seconds"
+$recordedHandlerAuthErrorLookupMax = Get-MetricStats -Kpis $kpis -MetricName "recorded_handler_auth_error_lookup_max_seconds"
+$recordedHandlerIdempotencyGuardP95 = Get-MetricStats -Kpis $kpis -MetricName "recorded_handler_idempotency_guard_p95_seconds"
+$recordedHandlerIdempotencyGuardMax = Get-MetricStats -Kpis $kpis -MetricName "recorded_handler_idempotency_guard_max_seconds"
+$recordedHandlerOutboxEnqueueP95 = Get-MetricStats -Kpis $kpis -MetricName "recorded_handler_outbox_enqueue_p95_seconds"
+$recordedHandlerOutboxEnqueueMax = Get-MetricStats -Kpis $kpis -MetricName "recorded_handler_outbox_enqueue_max_seconds"
+$outboxPayloadSerializeP95 = Get-MetricStats -Kpis $kpis -MetricName "outbox_payload_serialize_p95_seconds"
+$outboxPayloadSerializeMax = Get-MetricStats -Kpis $kpis -MetricName "outbox_payload_serialize_max_seconds"
+$outboxUpsertReturningP95 = Get-MetricStats -Kpis $kpis -MetricName "outbox_upsert_returning_p95_seconds"
+$outboxUpsertReturningMax = Get-MetricStats -Kpis $kpis -MetricName "outbox_upsert_returning_max_seconds"
+$processedMessageEnsureRowExistsP95 = Get-MetricStats -Kpis $kpis -MetricName "processed_message_ensure_row_exists_p95_seconds"
+$processedMessageEnsureRowExistsMax = Get-MetricStats -Kpis $kpis -MetricName "processed_message_ensure_row_exists_max_seconds"
+$processedMessageClaimProcessingUpdateP95 = Get-MetricStats -Kpis $kpis -MetricName "processed_message_claim_processing_update_p95_seconds"
+$processedMessageClaimProcessingUpdateMax = Get-MetricStats -Kpis $kpis -MetricName "processed_message_claim_processing_update_max_seconds"
+$processedMessageMarkDoneP95 = Get-MetricStats -Kpis $kpis -MetricName "processed_message_mark_done_p95_seconds"
+$processedMessageMarkDoneMax = Get-MetricStats -Kpis $kpis -MetricName "processed_message_mark_done_max_seconds"
 $publish = Get-MetricStats -Kpis $kpis -MetricName "publish_rps"
 $consume = Get-MetricStats -Kpis $kpis -MetricName "consume_rps"
 $retry = Get-MetricStats -Kpis $kpis -MetricName "retry_enqueue_rps"
@@ -331,13 +355,31 @@ $lines.Add(("| Error rate (server 5xx) | {0} | max |" -f (FmtPercent $server5xx.
 
 $drainValue = Get-Prop -Object $drainMetric -Name "value"
 if ($null -ne $drainValue -and -not [string]::IsNullOrWhiteSpace([string]$drainValue)) {
-  $lines.Add(("| Drain time after cooldown (sec) | {0} | drain samples |" -f $drainValue))
+$lines.Add(("| Drain time after cooldown (sec) | {0} | drain samples |" -f $drainValue))
 } else {
   $lines.Add("| Drain time after cooldown (sec) | n/a | drain samples missing |")
 }
 $lines.Add("")
 
-$lines.Add("## 3) 최종 판정")
+$lines.Add("## 3) Recorded Consumer 상세")
+$lines.Add("")
+$lines.Add("| Stage | p95 (ms) | max (ms) |")
+$lines.Add("| --- | --- | --- |")
+$lines.Add(("| consumer claim/setup total | {0} | {1} |" -f (FmtNum (SecToMsOrNull $recordedConsumerClaimSetupP95.max) 2), (FmtNum (SecToMsOrNull $recordedConsumerClaimSetupMax.max) 2)))
+$lines.Add(("| consumer handler total | {0} | {1} |" -f (FmtNum (SecToMsOrNull $recordedConsumerHandlerP95.max) 2), (FmtNum (SecToMsOrNull $recordedConsumerHandlerMax.max) 2)))
+$lines.Add(("| consumer post-handler completion total | {0} | {1} |" -f (FmtNum (SecToMsOrNull $recordedConsumerPostHandlerCompletionP95.max) 2), (FmtNum (SecToMsOrNull $recordedConsumerPostHandlerCompletionMax.max) 2)))
+$lines.Add(("| handler payload_parse | {0} | {1} |" -f (FmtNum (SecToMsOrNull $recordedHandlerPayloadParseP95.max) 2), (FmtNum (SecToMsOrNull $recordedHandlerPayloadParseMax.max) 2)))
+$lines.Add(("| handler auth_error_lookup | {0} | {1} |" -f (FmtNum (SecToMsOrNull $recordedHandlerAuthErrorLookupP95.max) 2), (FmtNum (SecToMsOrNull $recordedHandlerAuthErrorLookupMax.max) 2)))
+$lines.Add(("| handler idempotency_guard | {0} | {1} |" -f (FmtNum (SecToMsOrNull $recordedHandlerIdempotencyGuardP95.max) 2), (FmtNum (SecToMsOrNull $recordedHandlerIdempotencyGuardMax.max) 2)))
+$lines.Add(("| handler outbox_enqueue_total | {0} | {1} |" -f (FmtNum (SecToMsOrNull $recordedHandlerOutboxEnqueueP95.max) 2), (FmtNum (SecToMsOrNull $recordedHandlerOutboxEnqueueMax.max) 2)))
+$lines.Add(("| outbox serialize | {0} | {1} |" -f (FmtNum (SecToMsOrNull $outboxPayloadSerializeP95.max) 2), (FmtNum (SecToMsOrNull $outboxPayloadSerializeMax.max) 2)))
+$lines.Add(("| outbox upsertReturning | {0} | {1} |" -f (FmtNum (SecToMsOrNull $outboxUpsertReturningP95.max) 2), (FmtNum (SecToMsOrNull $outboxUpsertReturningMax.max) 2)))
+$lines.Add(("| processed ensureRowExists | {0} | {1} |" -f (FmtNum (SecToMsOrNull $processedMessageEnsureRowExistsP95.max) 2), (FmtNum (SecToMsOrNull $processedMessageEnsureRowExistsMax.max) 2)))
+$lines.Add(("| processed claimProcessingUpdate | {0} | {1} |" -f (FmtNum (SecToMsOrNull $processedMessageClaimProcessingUpdateP95.max) 2), (FmtNum (SecToMsOrNull $processedMessageClaimProcessingUpdateMax.max) 2)))
+$lines.Add(("| processed markDone | {0} | {1} |" -f (FmtNum (SecToMsOrNull $processedMessageMarkDoneP95.max) 2), (FmtNum (SecToMsOrNull $processedMessageMarkDoneMax.max) 2)))
+$lines.Add("")
+
+$lines.Add("## 4) 최종 판정")
 $lines.Add("")
 $lines.Add(("- Verdict: **{0}**" -f $verdict))
 $lines.Add("")
@@ -362,7 +404,7 @@ if ((Safe-Count $checks) -eq 0) {
 }
 $lines.Add("")
 
-$lines.Add("## 4) 이상 징후")
+$lines.Add("## 5) 이상 징후")
 $lines.Add("")
 if ((Safe-Count $anomalies) -eq 0) {
   $lines.Add("- 없음")
@@ -373,7 +415,7 @@ if ((Safe-Count $anomalies) -eq 0) {
 }
 $lines.Add("")
 
-$lines.Add("## 5) Appendix: PromQL")
+$lines.Add("## 6) Appendix: PromQL")
 $lines.Add("")
 $lines.Add("| Metric ID | PromQL | Samples | last / avg / max |")
 $lines.Add("| --- | --- | --- | --- |")
