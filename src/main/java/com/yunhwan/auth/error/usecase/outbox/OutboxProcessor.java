@@ -3,10 +3,12 @@ package com.yunhwan.auth.error.usecase.outbox;
 import com.yunhwan.auth.error.common.exception.NonRetryablePublishException;
 import com.yunhwan.auth.error.domain.outbox.OutboxMessage;
 import com.yunhwan.auth.error.domain.outbox.decision.OutboxDecision;
+import com.yunhwan.auth.error.infra.metrics.MetricsConfig;
 import com.yunhwan.auth.error.usecase.consumer.policy.RetryPolicy;
 import com.yunhwan.auth.error.usecase.outbox.port.OutboxMessageStore;
 import com.yunhwan.auth.error.usecase.outbox.port.OutboxPublisher;
-import lombok.RequiredArgsConstructor;
+import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.Timer;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
@@ -16,13 +18,30 @@ import java.util.List;
 
 @Slf4j
 @Service
-@RequiredArgsConstructor
 public class OutboxProcessor {
 
     private final OutboxPublisher outboxPublisher;
     private final OutboxMessageStore outboxMessageStore;
     private final RetryPolicy retryPolicy;
     private final Clock clock;
+    private final MeterRegistry meterRegistry;
+    private final Timer outboxPublishTimer;
+
+    public OutboxProcessor(
+            OutboxPublisher outboxPublisher,
+            OutboxMessageStore outboxMessageStore,
+            RetryPolicy retryPolicy,
+            Clock clock,
+            MeterRegistry meterRegistry
+    ) {
+        this.outboxPublisher = outboxPublisher;
+        this.outboxMessageStore = outboxMessageStore;
+        this.retryPolicy = retryPolicy;
+        this.clock = clock;
+        this.meterRegistry = meterRegistry;
+        this.outboxPublishTimer = Timer.builder(MetricsConfig.METRIC_OUTBOX_PUBLISH)
+                .register(meterRegistry);
+    }
 
     /**
      * poller가 claim해서 PROCESSING으로 바꾼 메시지들을 처리하고,
@@ -39,7 +58,12 @@ public class OutboxProcessor {
 
             try {
                 // 1) 실제 처리(예: RabbitMQ publish)
-                outboxPublisher.publish(m);
+                Timer.Sample sample = Timer.start(meterRegistry);
+                try {
+                    outboxPublisher.publish(m);
+                } finally {
+                    sample.stop(outboxPublishTimer);
+                }
 
                 // 2) 성공 -> PUBLISHED로 마감
                 decision = OutboxDecision.ofPublished();

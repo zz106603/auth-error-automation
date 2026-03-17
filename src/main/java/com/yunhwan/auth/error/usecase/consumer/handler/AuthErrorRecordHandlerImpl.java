@@ -6,11 +6,14 @@ import com.yunhwan.auth.error.domain.autherror.AuthError;
 import com.yunhwan.auth.error.domain.autherror.AuthErrorStatus;
 import com.yunhwan.auth.error.domain.outbox.OutboxMessage;
 import com.yunhwan.auth.error.domain.outbox.descriptor.OutboxEventDescriptor;
+import com.yunhwan.auth.error.infra.metrics.MetricsConfig;
 import com.yunhwan.auth.error.usecase.autherror.dto.AuthErrorAnalysisRequestedPayload;
 import com.yunhwan.auth.error.usecase.autherror.dto.AuthErrorRecordedPayload;
 import com.yunhwan.auth.error.usecase.autherror.port.AuthErrorStore;
 import com.yunhwan.auth.error.usecase.consumer.port.AuthErrorPayloadParser;
 import com.yunhwan.auth.error.usecase.outbox.OutboxWriter;
+import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.Timer;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
@@ -19,6 +22,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.time.Clock;
 import java.time.OffsetDateTime;
 import java.util.Map;
+import java.util.concurrent.TimeUnit;
 
 @Slf4j
 @Component("authErrorRecordedHandler")
@@ -29,6 +33,7 @@ public class AuthErrorRecordHandlerImpl implements AuthErrorHandler {
     private final AuthErrorPayloadParser payloadParser;
     private final OutboxWriter outboxWriter;
     private final Clock clock;
+    private final MeterRegistry meterRegistry;
     private final OutboxEventDescriptor<AuthErrorAnalysisRequestedPayload> analysisRequestedDescriptor;
 
     @Override
@@ -42,23 +47,36 @@ public class AuthErrorRecordHandlerImpl implements AuthErrorHandler {
         // "메시지 형식 계약"으로 강제해두면 운영/디버깅에 도움 됨.
         requireString(headers, "eventType");
         requireString(headers, "aggregateType");
+        String eventType = String.valueOf(headers.get("eventType"));
 
         // 1) payload 파싱 실패는 재시도 의미 없음
         final AuthErrorRecordedPayload payload;
         try {
-            payload = payloadParser.parse(payloadJson, outboxId);
+            payload = recordTimer(
+                    MetricsConfig.METRIC_RECORDED_HANDLER_PAYLOAD_PARSE,
+                    eventType,
+                    () -> payloadParser.parse(payloadJson, outboxId)
+            );
         } catch (Exception e) {
             throw new NonRetryableAuthErrorException("invalid payload. outboxId=" + outboxId, e);
         }
 
         // 2) 대상 도메인 없으면 재시도 의미 없음
-        AuthError authError = authErrorStore.findById(payload.authErrorId())
-                .orElseThrow(() -> new NonRetryableAuthErrorException(
-                        "auth_error not found. authErrorId=" + payload.authErrorId() + ", outboxId=" + outboxId
-                ));
+        AuthError authError = recordTimer(
+                MetricsConfig.METRIC_RECORDED_HANDLER_AUTH_ERROR_LOOKUP,
+                eventType,
+                () -> authErrorStore.findById(payload.authErrorId())
+                        .orElseThrow(() -> new NonRetryableAuthErrorException(
+                                "auth_error not found. authErrorId=" + payload.authErrorId() + ", outboxId=" + outboxId
+                        ))
+        );
 
         // 3) 멱등 가드: terminal 또는 이미 analysis 요청한 건 예외 없이 종료(=성공 취급)
-        AuthErrorStatus status = authError.getStatus();
+        AuthErrorStatus status = recordTimer(
+                MetricsConfig.METRIC_RECORDED_HANDLER_IDEMPOTENCY_GUARD,
+                eventType,
+                authError::getStatus
+        );
         if (status != null && (status.isTerminal() || status == AuthErrorStatus.ANALYSIS_REQUESTED)) {
             log.info("[AuthErrorHandler] already requested/terminal -> skip. authErrorId={}, status={}, outboxId={}",
                     authError.getId(), status, outboxId);
@@ -80,10 +98,14 @@ public class AuthErrorRecordHandlerImpl implements AuthErrorHandler {
                     now
             );
 
-            OutboxMessage outbox = outboxWriter.enqueue(
-                    analysisRequestedDescriptor,
-                    String.valueOf(payload.authErrorId()), // aggregateId
-                    analysisPayload
+            OutboxMessage outbox = recordTimer(
+                    MetricsConfig.METRIC_RECORDED_HANDLER_OUTBOX_ENQUEUE_TOTAL,
+                    eventType,
+                    () -> outboxWriter.enqueue(
+                            analysisRequestedDescriptor,
+                            String.valueOf(payload.authErrorId()), // aggregateId
+                            analysisPayload
+                    )
             );
 
             // 요청 상태
@@ -136,5 +158,29 @@ public class AuthErrorRecordHandlerImpl implements AuthErrorHandler {
     private String safeMsg(Throwable t) {
         String m = t.getMessage();
         return (m == null) ? t.getClass().getSimpleName() : m;
+    }
+
+    private void recordTimer(String metricName, String eventType, Runnable action) {
+        recordTimer(metricName, eventType, () -> {
+            action.run();
+            return null;
+        });
+    }
+
+    private <T> T recordTimer(String metricName, String eventType, TimedSupplier<T> supplier) {
+        long startedAt = System.nanoTime();
+        try {
+            return supplier.get();
+        } finally {
+            Timer.builder(metricName)
+                    .tag(MetricsConfig.TAG_EVENT_TYPE, eventType)
+                    .register(meterRegistry)
+                    .record(System.nanoTime() - startedAt, TimeUnit.NANOSECONDS);
+        }
+    }
+
+    @FunctionalInterface
+    private interface TimedSupplier<T> {
+        T get();
     }
 }
