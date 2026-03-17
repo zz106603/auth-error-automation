@@ -1,18 +1,23 @@
 package com.yunhwan.auth.error.infra.persistence.adapter;
 
 import com.yunhwan.auth.error.domain.outbox.OutboxMessage;
+import com.yunhwan.auth.error.infra.metrics.MetricsConfig;
 import com.yunhwan.auth.error.infra.metrics.OutboxAgeStats;
+import com.yunhwan.auth.error.infra.metrics.RecordedConsumerMetricsContext;
 import com.yunhwan.auth.error.infra.persistence.jpa.OutboxJpaRepository;
 import com.yunhwan.auth.error.usecase.outbox.port.OutboxMessageStore;
+import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.Timer;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Repository;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.OffsetDateTime;
-import java.util.Objects;
 import java.util.List;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
+import java.util.concurrent.TimeUnit;
 
 @Repository
 @RequiredArgsConstructor
@@ -20,6 +25,7 @@ import java.util.Set;
 public class OutboxMessageStoreAdapter implements OutboxMessageStore {
 
     private final OutboxJpaRepository repo;
+    private final MeterRegistry meterRegistry;
 
     @Override
     public OutboxMessage save(OutboxMessage outboxMessage) {
@@ -49,7 +55,11 @@ public class OutboxMessageStoreAdapter implements OutboxMessageStore {
     @Override
     public OutboxMessage upsertReturning(String aggregateType, String aggregateId, String eventType,
                                          String payloadJson, String idempotencyKey, OffsetDateTime now) {
-        return repo.upsertReturning(aggregateType, aggregateId, eventType, payloadJson, idempotencyKey, now);
+        return recordRecordedPathTimer(
+                MetricsConfig.METRIC_OUTBOX_UPSERT_RETURNING,
+                eventType,
+                () -> repo.upsertReturning(aggregateType, aggregateId, eventType, payloadJson, idempotencyKey, now)
+        );
     }
 
     @Override
@@ -104,5 +114,29 @@ public class OutboxMessageStoreAdapter implements OutboxMessageStore {
         if (v == null) return 0;
         if (v instanceof Number n) return n.longValue();
         return Long.parseLong(Objects.toString(v));
+    }
+
+    private <T> T recordRecordedPathTimer(String metricName, String eventType, TimedSupplier<T> supplier) {
+        RecordedConsumerMetricsContext.MetricContext context =
+                RecordedConsumerMetricsContext.current().orElse(null);
+        if (context == null) {
+            return supplier.get();
+        }
+
+        long startedAt = System.nanoTime();
+        try {
+            return supplier.get();
+        } finally {
+            Timer.builder(metricName)
+                    .tag(MetricsConfig.TAG_EVENT_TYPE, eventType)
+                    .tag(MetricsConfig.TAG_QUEUE, context.queue())
+                    .register(meterRegistry)
+                    .record(System.nanoTime() - startedAt, TimeUnit.NANOSECONDS);
+        }
+    }
+
+    @FunctionalInterface
+    private interface TimedSupplier<T> {
+        T get();
     }
 }

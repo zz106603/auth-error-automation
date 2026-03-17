@@ -6,6 +6,7 @@ import com.yunhwan.auth.error.domain.outbox.decision.OutboxDecision;
 import com.yunhwan.auth.error.common.exception.NonRetryableAuthErrorException;
 import com.yunhwan.auth.error.infra.metrics.MetricTags;
 import com.yunhwan.auth.error.infra.metrics.MetricsConfig;
+import com.yunhwan.auth.error.infra.metrics.RecordedConsumerMetricsContext;
 import com.yunhwan.auth.error.infra.messaging.rabbit.RabbitTopologyConfig;
 import com.yunhwan.auth.error.infra.messaging.rabbit.RetryRoutingResolver;
 import com.yunhwan.auth.error.infra.support.HeaderUtils;
@@ -33,6 +34,7 @@ import java.time.OffsetDateTime;
 import java.time.temporal.ChronoUnit;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.concurrent.TimeUnit;
 
 @Slf4j
 @Component
@@ -119,72 +121,104 @@ public class AuthErrorRecordedConsumer {
         OffsetDateTime now = OffsetDateTime.now(clock);
         OffsetDateTime leaseUntil = now.plusSeconds(LEASE_DURATION.getSeconds());
 
-        // 2) 선점
-        processedMessageStore.ensureRowExists(outboxId, now);
-        int claimed = processedMessageStore.claimProcessingUpdate(outboxId, now, leaseUntil);
-        if (claimed == 0) {
-            ProcessedStatus status = processedMessageStore.findStatusByOutboxId(outboxId).orElse(null);
-            log.warn("[AuthErrorConsumer] claim failed -> ack(drop). outboxId={}, status={}", outboxId, status);
-            channel.basicAck(tag, false);
-            return;
-        }
-
-        try {
-            int currentRetry = HeaderUtils.getRetryCount(message.getMessageProperties().getHeaders());
-            // 3) handler 위임
-            handler.handle(payload, buildHeaders(outboxId, eventType, aggregateType, currentRetry));
-
-            // 4) 성공 확정
-            OffsetDateTime processedAt = OffsetDateTime.now(clock);
-            processedMessageStore.markDone(outboxId, processedAt);
-            recordLatencyMetrics(eventType, parsed, MetricsConfig.RESULT_SUCCESS, processedAt);
-            // consume_rate 기준선
-            consumeCounter(eventType, MetricsConfig.RESULT_SUCCESS).increment();
-
-            channel.basicAck(tag, false);
-        } catch (Exception e) {
-            int currentRetrySafe;
+        try (RecordedConsumerMetricsContext.Scope ignored =
+                     RecordedConsumerMetricsContext.open(eventType, RabbitTopologyConfig.Q_RECORDED)) {
+            // 2) 선점
+            long claimSetupStartedAt = System.nanoTime();
+            int claimed;
             try {
-                currentRetrySafe = HeaderUtils.getRetryCount(message.getMessageProperties().getHeaders());
-            } catch (Exception ignore) {
-                currentRetrySafe = 0;
+                processedMessageStore.ensureRowExists(outboxId, now);
+                claimed = processedMessageStore.claimProcessingUpdate(outboxId, now, leaseUntil);
+                if (claimed == 0) {
+                    ProcessedStatus status = processedMessageStore.findStatusByOutboxId(outboxId).orElse(null);
+                    log.warn("[AuthErrorConsumer] claim failed -> ack(drop). outboxId={}, status={}", outboxId, status);
+                    channel.basicAck(tag, false);
+                    return;
+                }
+            } finally {
+                recordStageTimer(
+                        MetricsConfig.METRIC_RECORDED_CONSUMER_CLAIM_SETUP_TOTAL,
+                        eventType,
+                        System.nanoTime() - claimSetupStartedAt
+                );
             }
 
-            OutboxDecision decision = decisionMaker.decide(now, currentRetrySafe, e);
+            try {
+                int currentRetry = HeaderUtils.getRetryCount(message.getMessageProperties().getHeaders());
 
-            if (decision.isDead()) {
-                processedMessageStore.markDead(outboxId, now, decision.lastError());
-                recordLatencyMetrics(eventType, parsed, MetricsConfig.RESULT_DEAD, now);
+                long handlerStartedAt = System.nanoTime();
+                try {
+                    // 3) handler 위임
+                    handler.handle(payload, buildHeaders(outboxId, eventType, aggregateType, currentRetry));
+                } finally {
+                    recordStageTimer(
+                            MetricsConfig.METRIC_RECORDED_CONSUMER_HANDLER_TOTAL,
+                            eventType,
+                            System.nanoTime() - handlerStartedAt
+                    );
+                }
 
-                log.error("[AuthErrorConsumer] DEAD -> DLQ outboxId={}, err={}", outboxId, decision.lastError(), e);
-                // DLQ 전환 집계
-                consumeCounter(eventType, MetricsConfig.RESULT_DEAD).increment();
-                dlqCounter(eventType, deadReason(e)).increment();
-                // DLQ 격리
-                channel.basicReject(tag, false);
-                return;
+                long completionStartedAt = System.nanoTime();
+                try {
+                    // 4) 성공 확정
+                    OffsetDateTime processedAt = OffsetDateTime.now(clock);
+                    processedMessageStore.markDone(outboxId, processedAt);
+                    recordLatencyMetrics(eventType, parsed, MetricsConfig.RESULT_SUCCESS, processedAt);
+                    // consume_rate 기준선
+                    consumeCounter(eventType, MetricsConfig.RESULT_SUCCESS).increment();
+
+                    channel.basicAck(tag, false);
+                } finally {
+                    recordStageTimer(
+                            MetricsConfig.METRIC_RECORDED_CONSUMER_POST_HANDLER_COMPLETION_TOTAL,
+                            eventType,
+                            System.nanoTime() - completionStartedAt
+                    );
+                }
+            } catch (Exception e) {
+                int currentRetrySafe;
+                try {
+                    currentRetrySafe = HeaderUtils.getRetryCount(message.getMessageProperties().getHeaders());
+                } catch (Exception ignore) {
+                    currentRetrySafe = 0;
+                }
+
+                OutboxDecision decision = decisionMaker.decide(now, currentRetrySafe, e);
+
+                if (decision.isDead()) {
+                    processedMessageStore.markDead(outboxId, now, decision.lastError());
+                    recordLatencyMetrics(eventType, parsed, MetricsConfig.RESULT_DEAD, now);
+
+                    log.error("[AuthErrorConsumer] DEAD -> DLQ outboxId={}, err={}", outboxId, decision.lastError(), e);
+                    // DLQ 전환 집계
+                    consumeCounter(eventType, MetricsConfig.RESULT_DEAD).increment();
+                    dlqCounter(eventType, deadReason(e)).increment();
+                    // DLQ 격리
+                    channel.basicReject(tag, false);
+                    return;
+                }
+
+                // 실패 기록: PROCESSING -> RETRY_WAIT (DB에 retry 정책을 기록)
+                processedMessageStore.markRetryWait(
+                        outboxId,
+                        now,
+                        decision.nextRetryAt(),
+                        decision.nextRetryCount(),
+                        decision.lastError()
+                );
+
+                log.warn("[AuthErrorConsumer] RETRY -> outboxId={}, nextRetryCount={}, nextRetryAt={}, err={}",
+                        outboxId, decision.nextRetryCount(), decision.nextRetryAt(), decision.lastError());
+
+                // 재발행(헤더 유지 + retry 갱신)
+                republishToRetryExchange(payload, eventType, message, decision);
+                // retry_enqueue_rate 분자
+                consumeCounter(eventType, MetricsConfig.RESULT_RETRY).increment();
+                retryEnqueueCounter(eventType, decision.nextRetryCount(), MetricsConfig.REASON_RETRYABLE).increment();
+
+                // 원본 메시지 ACK
+                channel.basicAck(tag, false);
             }
-
-            // 실패 기록: PROCESSING -> RETRY_WAIT (DB에 retry 정책을 기록)
-            processedMessageStore.markRetryWait(
-                    outboxId,
-                    now,
-                    decision.nextRetryAt(),
-                    decision.nextRetryCount(),
-                    decision.lastError()
-            );
-
-            log.warn("[AuthErrorConsumer] RETRY -> outboxId={}, nextRetryCount={}, nextRetryAt={}, err={}",
-                    outboxId, decision.nextRetryCount(), decision.nextRetryAt(), decision.lastError());
-
-            // 재발행(헤더 유지 + retry 갱신)
-            republishToRetryExchange(payload, eventType, message, decision);
-            // retry_enqueue_rate 분자
-            consumeCounter(eventType, MetricsConfig.RESULT_RETRY).increment();
-            retryEnqueueCounter(eventType, decision.nextRetryCount(), MetricsConfig.REASON_RETRYABLE).increment();
-
-            // 원본 메시지 ACK
-            channel.basicAck(tag, false);
         }
     }
 
@@ -290,5 +324,14 @@ public class AuthErrorRecordedConsumer {
 
     private String eventTypeOrUnknown(String eventType) {
         return eventType == null ? "unknown" : eventType;
+    }
+
+    private void recordStageTimer(String metricName, String eventType, long durationNanos) {
+        if (durationNanos < 0) return;
+        Timer.builder(metricName)
+                .tag(MetricsConfig.TAG_EVENT_TYPE, eventTypeOrUnknown(eventType))
+                .tag(MetricsConfig.TAG_QUEUE, RabbitTopologyConfig.Q_RECORDED)
+                .register(meterRegistry)
+                .record(durationNanos, TimeUnit.NANOSECONDS);
     }
 }
