@@ -69,12 +69,60 @@ management:
         auth_error.client_event_to_consume: true
         auth_error.ingest_to_consume: true
         auth_error.outbox.age: true
+        auth_error.recorded.consumer.claim_setup: true
+        auth_error.recorded.consumer.handler: true
+        auth_error.recorded.consumer.post_handler_completion: true
+        auth_error.recorded.handler.payload_parse: true
+        auth_error.recorded.handler.auth_error_lookup: true
+        auth_error.recorded.handler.idempotency_guard: true
+        auth_error.recorded.handler.outbox_enqueue: true
+        auth_error.outbox.payload_serialize: true
+        auth_error.outbox.upsert_returning: true
+        auth_error_ingest_transaction: true
+        auth_error_outbox_poller_claim: true
+        auth_error_outbox_publish: true
+        auth_error_outbox_publish_adapter: true
+        auth_error.processed_message.ensure_row_exists: true
+        auth_error.processed_message.claim_processing_update: true
+        auth_error.processed_message.mark_done: true
       maximum-expected-value:
         auth_error.client_event_to_consume: 900s
         auth_error.ingest_to_consume: 900s
+        auth_error.recorded.consumer.claim_setup: 900s
+        auth_error.recorded.consumer.handler: 900s
+        auth_error.recorded.consumer.post_handler_completion: 900s
+        auth_error.recorded.handler.payload_parse: 900s
+        auth_error.recorded.handler.auth_error_lookup: 900s
+        auth_error.recorded.handler.idempotency_guard: 900s
+        auth_error.recorded.handler.outbox_enqueue: 900s
+        auth_error.outbox.payload_serialize: 900s
+        auth_error.outbox.upsert_returning: 900s
+        auth_error_ingest_transaction: 900s
+        auth_error_outbox_poller_claim: 900s
+        auth_error_outbox_publish: 900s
+        auth_error_outbox_publish_adapter: 900s
+        auth_error.processed_message.ensure_row_exists: 900s
+        auth_error.processed_message.claim_processing_update: 900s
+        auth_error.processed_message.mark_done: 900s
       percentiles:
         http.server.requests: 0.95,0.99
         auth_error.outbox.age: 0.95,0.99
+        auth_error.recorded.consumer.claim_setup: 0.95,0.99
+        auth_error.recorded.consumer.handler: 0.95,0.99
+        auth_error.recorded.consumer.post_handler_completion: 0.95,0.99
+        auth_error.recorded.handler.payload_parse: 0.95,0.99
+        auth_error.recorded.handler.auth_error_lookup: 0.95,0.99
+        auth_error.recorded.handler.idempotency_guard: 0.95,0.99
+        auth_error.recorded.handler.outbox_enqueue: 0.95,0.99
+        auth_error.outbox.payload_serialize: 0.95,0.99
+        auth_error.outbox.upsert_returning: 0.95,0.99
+        auth_error_ingest_transaction: 0.95,0.99
+        auth_error_outbox_poller_claim: 0.95,0.99
+        auth_error_outbox_publish: 0.95,0.99
+        auth_error_outbox_publish_adapter: 0.95,0.99
+        auth_error.processed_message.ensure_row_exists: 0.95,0.99
+        auth_error.processed_message.claim_processing_update: 0.95,0.99
+        auth_error.processed_message.mark_done: 0.95,0.99
 
 metrics:
   # outbox/mq 지표 수집 (테스트 기본 OFF)
