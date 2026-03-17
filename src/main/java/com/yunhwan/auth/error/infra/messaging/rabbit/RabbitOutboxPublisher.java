@@ -7,6 +7,7 @@ import com.yunhwan.auth.error.infra.metrics.MetricsConfig;
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.Gauge;
 import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.Timer;
 import com.yunhwan.auth.error.usecase.outbox.port.OutboxPublisher;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.amqp.core.MessageProperties;
@@ -35,6 +36,7 @@ public class RabbitOutboxPublisher implements OutboxPublisher {
     private final RabbitTemplate rabbitTemplate;
     private final MeterRegistry meterRegistry;
     private final AtomicLong lastPublishSuccessEpochMs = new AtomicLong(0);
+    private final Timer outboxPublishAdapterTimer;
 
     public RabbitOutboxPublisher(RabbitTemplate rabbitTemplate, MeterRegistry meterRegistry) {
         this.rabbitTemplate = rabbitTemplate;
@@ -42,10 +44,13 @@ public class RabbitOutboxPublisher implements OutboxPublisher {
         // publish 정지 감지용 (silent collapse)
         Gauge.builder(MetricsConfig.METRIC_PUBLISH_LAST_SUCCESS_EPOCH_MS, lastPublishSuccessEpochMs, AtomicLong::get)
                 .register(meterRegistry);
+        this.outboxPublishAdapterTimer = Timer.builder(MetricsConfig.METRIC_OUTBOX_PUBLISH_ADAPTER)
+                .register(meterRegistry);
     }
 
     @Override
     public void publish(OutboxMessage message) throws Exception {
+        Timer.Sample sample = Timer.start(meterRegistry);
         log.info("[RabbitOutboxPublisher] Publishing message. id={}, type={}",
                 message.getId(), message.getEventType());
 
@@ -114,6 +119,8 @@ public class RabbitOutboxPublisher implements OutboxPublisher {
             // 일반 실패 집계
             publishCounter(message.getEventType(), MetricsConfig.RESULT_ERROR).increment();
             throw e;
+        } finally {
+            sample.stop(outboxPublishAdapterTimer);
         }
     }
 

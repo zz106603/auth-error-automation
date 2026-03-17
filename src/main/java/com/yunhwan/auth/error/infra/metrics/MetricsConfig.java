@@ -22,6 +22,22 @@ public final class MetricsConfig {
     public static final String METRIC_RUNTIME_CONSUMER_MAX_CONCURRENCY = "auth_error.runtime.consumer.max_concurrency";
     public static final String METRIC_RUNTIME_CONSUMER_PREFETCH = "auth_error.runtime.consumer.prefetch";
     public static final String METRIC_RUNTIME_PROFILE_INFO = "auth_error.runtime.profile.info";
+    public static final String METRIC_RECORDED_CONSUMER_CLAIM_SETUP_TOTAL = "auth_error.recorded.consumer.claim_setup";
+    public static final String METRIC_RECORDED_CONSUMER_HANDLER_TOTAL = "auth_error.recorded.consumer.handler";
+    public static final String METRIC_RECORDED_CONSUMER_POST_HANDLER_COMPLETION_TOTAL = "auth_error.recorded.consumer.post_handler_completion";
+    public static final String METRIC_RECORDED_HANDLER_PAYLOAD_PARSE = "auth_error.recorded.handler.payload_parse";
+    public static final String METRIC_RECORDED_HANDLER_AUTH_ERROR_LOOKUP = "auth_error.recorded.handler.auth_error_lookup";
+    public static final String METRIC_RECORDED_HANDLER_IDEMPOTENCY_GUARD = "auth_error.recorded.handler.idempotency_guard";
+    public static final String METRIC_RECORDED_HANDLER_OUTBOX_ENQUEUE_TOTAL = "auth_error.recorded.handler.outbox_enqueue";
+    public static final String METRIC_OUTBOX_PAYLOAD_SERIALIZE = "auth_error.outbox.payload_serialize";
+    public static final String METRIC_OUTBOX_UPSERT_RETURNING = "auth_error.outbox.upsert_returning";
+    public static final String METRIC_PROCESSED_MESSAGE_ENSURE_ROW_EXISTS = "auth_error.processed_message.ensure_row_exists";
+    public static final String METRIC_PROCESSED_MESSAGE_CLAIM_PROCESSING_UPDATE = "auth_error.processed_message.claim_processing_update";
+    public static final String METRIC_PROCESSED_MESSAGE_MARK_DONE = "auth_error.processed_message.mark_done";
+    public static final String METRIC_INGEST_TRANSACTION = "auth_error_ingest_transaction";
+    public static final String METRIC_OUTBOX_POLLER_CLAIM = "auth_error_outbox_poller_claim";
+    public static final String METRIC_OUTBOX_PUBLISH = "auth_error_outbox_publish";
+    public static final String METRIC_OUTBOX_PUBLISH_ADAPTER = "auth_error_outbox_publish_adapter";
 
     // 고카디널리티 금지(요청ID/에러메시지/스택 제외)
     public static final String TAG_EVENT_TYPE = "event_type";
@@ -31,6 +47,7 @@ public final class MetricsConfig {
     public static final String TAG_REASON = "reason";
     public static final String TAG_QUEUE_TYPE = "queue_type";
     public static final String TAG_PROFILE = "profile";
+    public static final String TAG_OPERATION = "operation";
 
     // 고정 결과값(집계 안정성)
     public static final String RESULT_SUCCESS = "success";
