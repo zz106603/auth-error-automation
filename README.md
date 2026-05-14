@@ -18,7 +18,7 @@ HikariCP saturation 등을 Grafana로 관측하도록 구성했습니다.
 > 단순 API latency가 아니라,
 > backlog age / retry depth / publish-consume imbalance까지 함께 추적합니다.
 
-![LT-002 Ramp-up](docs/images/lt-002-rampup.png)
+![LT-002 Ramp-up](docs/performance/lt-002-rampup.png)
 
 ---
 
