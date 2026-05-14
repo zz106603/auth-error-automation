@@ -9,6 +9,19 @@
 
 ---
 
+## Monitoring Preview
+
+Transactional Outbox 기반 인증 오류 파이프라인의
+E2E latency, Retry/DLQ depth, RabbitMQ throughput,
+HikariCP saturation 등을 Grafana로 관측하도록 구성했습니다.
+
+> 단순 API latency가 아니라,
+> backlog age / retry depth / publish-consume imbalance까지 함께 추적합니다.
+
+![LT-002 Ramp-up](docs/images/lt-002-rampup.png)
+
+---
+
 ## Project Goal
 
 이 프로젝트의 목표는 단순 메시지 발행이 아니라,
