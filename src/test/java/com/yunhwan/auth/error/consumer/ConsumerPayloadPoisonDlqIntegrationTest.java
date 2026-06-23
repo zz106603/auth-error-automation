@@ -42,6 +42,7 @@ class ConsumerPayloadPoisonDlqIntegrationTest extends AbstractStubIntegrationTes
         dlqObserver.reset();
         purgeQueue(RabbitTopologyConfig.Q_RECORDED);
         purgeQueue(RabbitTopologyConfig.DLQ_RECORDED);
+        jdbcTemplate.update("delete from retry_publish_request");
         jdbcTemplate.update("delete from processed_message");
         jdbcTemplate.update("delete from outbox_message");
         jdbcTemplate.update("delete from auth_error_cluster_item");

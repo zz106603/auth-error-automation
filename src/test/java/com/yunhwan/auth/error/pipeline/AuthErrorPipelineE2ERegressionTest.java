@@ -11,6 +11,8 @@ import com.yunhwan.auth.error.usecase.autherror.port.AuthErrorStore;
 import com.yunhwan.auth.error.usecase.consumer.port.ProcessedMessageStore;
 import com.yunhwan.auth.error.usecase.outbox.OutboxPoller;
 import com.yunhwan.auth.error.usecase.outbox.OutboxProcessor;
+import com.yunhwan.auth.error.usecase.consumer.RetryPublishRequestPoller;
+import com.yunhwan.auth.error.usecase.consumer.RetryPublishRequestProcessor;
 import org.awaitility.Awaitility;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -36,6 +38,10 @@ class AuthErrorPipelineE2ERegressionTest extends AbstractIntegrationTest {
     OutboxPoller outboxPoller;
     @Autowired
     OutboxProcessor outboxProcessor;
+    @Autowired
+    RetryPublishRequestPoller retryPublishRequestPoller;
+    @Autowired
+    RetryPublishRequestProcessor retryPublishRequestProcessor;
 
     @Autowired
     ProcessedMessageStore processedMessageStore;
@@ -57,6 +63,7 @@ class AuthErrorPipelineE2ERegressionTest extends AbstractIntegrationTest {
     void setUp() {
         dlqObserver.reset();
         processedMessageStore.deleteAll();
+        jdbcTemplate.update("delete from retry_publish_request");
         jdbcTemplate.update("delete from processed_message");
         jdbcTemplate.update("delete from outbox_message");
         jdbcTemplate.update("delete from auth_error_cluster_item");
@@ -110,6 +117,7 @@ class AuthErrorPipelineE2ERegressionTest extends AbstractIntegrationTest {
 
         long analysisOutboxId = claim2.claimed().getFirst().getId();
         outboxProcessor.process(claim2.owner(), claim2.claimed());
+        drainRetryPublishRequests();
 
         // Then: 재시도 횟수를 모두 소진하고 DLQ로 이동했는지 확인
         Awaitility.await()
@@ -180,6 +188,7 @@ class AuthErrorPipelineE2ERegressionTest extends AbstractIntegrationTest {
 
         long analysisOutboxId = claim2.claimed().getFirst().getId();
         outboxProcessor.process(claim2.owner(), claim2.claimed());
+        drainRetryPublishRequests();
 
         // Then: 재시도 후 성공하여 AuthError 상태가 PROCESSED로 변경되었는지 확인
         Awaitility.await()
@@ -226,5 +235,18 @@ class AuthErrorPipelineE2ERegressionTest extends AbstractIntegrationTest {
                 null,
                 "stacktrace"
         );
+    }
+
+    private void drainRetryPublishRequests() {
+        Awaitility.await()
+                .atMost(Duration.ofSeconds(10))
+                .pollInterval(Duration.ofMillis(200))
+                .untilAsserted(() -> {
+                    var retryClaim = retryPublishRequestPoller.pollOnce();
+                    assertThat(retryClaim.claimed())
+                            .withFailMessage("retry publish request가 생성되어 있어야 합니다.")
+                            .isNotEmpty();
+                    retryPublishRequestProcessor.process(retryClaim.owner(), retryClaim.claimed());
+                });
     }
 }
