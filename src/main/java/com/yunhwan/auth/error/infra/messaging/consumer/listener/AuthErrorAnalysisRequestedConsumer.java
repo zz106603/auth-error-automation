@@ -7,9 +7,9 @@ import com.yunhwan.auth.error.common.exception.NonRetryableAuthErrorException;
 import com.yunhwan.auth.error.infra.metrics.MetricTags;
 import com.yunhwan.auth.error.infra.metrics.MetricsConfig;
 import com.yunhwan.auth.error.infra.messaging.rabbit.RabbitTopologyConfig;
-import com.yunhwan.auth.error.infra.messaging.rabbit.RetryRoutingResolver;
 import com.yunhwan.auth.error.infra.support.HeaderUtils;
 import com.yunhwan.auth.error.usecase.consumer.ConsumerDecisionMaker;
+import com.yunhwan.auth.error.usecase.consumer.ConsumerRetryRequestRecorder;
 import com.yunhwan.auth.error.usecase.consumer.handler.AuthErrorHandler;
 import com.yunhwan.auth.error.usecase.consumer.port.ProcessedMessageStore;
 import io.micrometer.core.instrument.Counter;
@@ -17,9 +17,7 @@ import io.micrometer.core.instrument.MeterRegistry;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.amqp.core.Message;
-import org.springframework.amqp.core.MessageProperties;
 import org.springframework.amqp.rabbit.annotation.RabbitListener;
-import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.messaging.handler.annotation.Header;
 import org.springframework.stereotype.Component;
@@ -36,26 +34,23 @@ public class AuthErrorAnalysisRequestedConsumer {
     private static final String RETRY_HEADER = "x-retry-count";
     private static final Duration LEASE_DURATION = Duration.ofSeconds(60);
 
-    private final RabbitTemplate rabbitTemplate;
     private final AuthErrorHandler handler;
     private final ProcessedMessageStore processedMessageStore;
     private final ConsumerDecisionMaker decisionMaker;
-    private final RetryRoutingResolver retryRoutingResolver;
+    private final ConsumerRetryRequestRecorder retryRequestRecorder;
     private final MeterRegistry meterRegistry;
 
     public AuthErrorAnalysisRequestedConsumer(
-            RabbitTemplate rabbitTemplate,
             @Qualifier("authErrorAnalysisRequestedHandler") AuthErrorHandler handler,
             ProcessedMessageStore processedMessageStore,
             ConsumerDecisionMaker decisionMaker,
-            RetryRoutingResolver retryRoutingResolver,
+            ConsumerRetryRequestRecorder retryRequestRecorder,
             MeterRegistry meterRegistry
     ) {
-        this.rabbitTemplate = rabbitTemplate;
         this.handler = handler;
         this.processedMessageStore = processedMessageStore;
         this.decisionMaker = decisionMaker;
-        this.retryRoutingResolver = retryRoutingResolver;
+        this.retryRequestRecorder = retryRequestRecorder;
         this.meterRegistry = meterRegistry;
     }
 
@@ -133,18 +128,18 @@ public class AuthErrorAnalysisRequestedConsumer {
                 return;
             }
 
-            processedMessageStore.markRetryWait(
+            retryRequestRecorder.recordRetryRequest(
                     outboxId,
+                    eventType,
+                    aggregateType,
+                    payload,
                     now,
-                    decision.nextRetryAt(),
-                    decision.nextRetryCount(),
-                    decision.lastError()
+                    decision
             );
 
             log.warn("[AnalysisConsumer] RETRY -> outboxId={}, nextRetryCount={}, nextRetryAt={}, err={}",
                     outboxId, decision.nextRetryCount(), decision.nextRetryAt(), decision.lastError());
 
-            republishToRetryExchange(payload, message, decision, eventType);
             // retry_enqueue_rate 분자 (analysis)
             consumeCounter(eventType, MetricsConfig.RESULT_RETRY).increment();
             retryEnqueueCounter(eventType, decision.nextRetryCount(), MetricsConfig.REASON_RETRYABLE).increment();
@@ -160,33 +155,6 @@ public class AuthErrorAnalysisRequestedConsumer {
         headers.put("aggregateType", aggregateType);
         headers.put(RETRY_HEADER, retry);
         return headers;
-    }
-
-    private void republishToRetryExchange(String payload, Message original, OutboxDecision decision, String eventType) {
-        String retryExchange = retryRoutingResolver.retryExchange(eventType);
-        String routingKey = retryRoutingResolver.resolve(eventType, decision.nextRetryCount());
-
-        rabbitTemplate.convertAndSend(
-                retryExchange,
-                routingKey,
-                payload,
-                msg -> {
-                    MessageProperties p = msg.getMessageProperties();
-                    p.setContentType(MessageProperties.CONTENT_TYPE_JSON);
-
-                    p.getHeaders().putAll(original.getMessageProperties().getHeaders());
-                    p.setHeader(RETRY_HEADER, decision.nextRetryCount());
-
-                    if (decision.lastError() != null) {
-                        p.setHeader("x-last-error", decision.lastError());
-                    }
-                    if (decision.nextRetryAt() != null) {
-                        p.setHeader("x-next-retry-at", decision.nextRetryAt().toString());
-                    }
-
-                    return msg;
-                }
-        );
     }
 
     private Counter consumeCounter(String eventType, String result) {

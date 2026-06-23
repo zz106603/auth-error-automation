@@ -8,10 +8,10 @@ import com.yunhwan.auth.error.infra.metrics.MetricTags;
 import com.yunhwan.auth.error.infra.metrics.MetricsConfig;
 import com.yunhwan.auth.error.infra.metrics.RecordedConsumerMetricsContext;
 import com.yunhwan.auth.error.infra.messaging.rabbit.RabbitTopologyConfig;
-import com.yunhwan.auth.error.infra.messaging.rabbit.RetryRoutingResolver;
 import com.yunhwan.auth.error.infra.support.HeaderUtils;
 import com.yunhwan.auth.error.usecase.autherror.dto.AuthErrorRecordedPayload;
 import com.yunhwan.auth.error.usecase.consumer.ConsumerDecisionMaker;
+import com.yunhwan.auth.error.usecase.consumer.ConsumerRetryRequestRecorder;
 import com.yunhwan.auth.error.usecase.consumer.handler.AuthErrorHandler;
 import com.yunhwan.auth.error.usecase.consumer.port.AuthErrorPayloadParser;
 import com.yunhwan.auth.error.usecase.consumer.port.ProcessedMessageStore;
@@ -21,9 +21,7 @@ import io.micrometer.core.instrument.Timer;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.amqp.core.Message;
-import org.springframework.amqp.core.MessageProperties;
 import org.springframework.amqp.rabbit.annotation.RabbitListener;
-import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.messaging.handler.annotation.Header;
 import org.springframework.stereotype.Component;
@@ -43,30 +41,27 @@ public class AuthErrorRecordedConsumer {
     private static final String RETRY_HEADER = "x-retry-count";
     private static final Duration LEASE_DURATION = Duration.ofSeconds(60);
 
-    private final RabbitTemplate rabbitTemplate;
     private final AuthErrorHandler handler;
     private final ProcessedMessageStore processedMessageStore;
     private final ConsumerDecisionMaker decisionMaker;
-    private final RetryRoutingResolver retryRoutingResolver;
+    private final ConsumerRetryRequestRecorder retryRequestRecorder;
     private final AuthErrorPayloadParser payloadParser;
     private final MeterRegistry meterRegistry;
     private final Clock clock;
 
     public AuthErrorRecordedConsumer(
-            RabbitTemplate rabbitTemplate,
             @Qualifier("authErrorRecordedHandler") AuthErrorHandler handler,
             ProcessedMessageStore processedMessageStore,
             ConsumerDecisionMaker decisionMaker,
-            RetryRoutingResolver retryRoutingResolver,
+            ConsumerRetryRequestRecorder retryRequestRecorder,
             AuthErrorPayloadParser payloadParser,
             MeterRegistry meterRegistry,
             Clock clock
     ) {
-        this.rabbitTemplate = rabbitTemplate;
         this.handler = handler;
         this.processedMessageStore = processedMessageStore;
         this.decisionMaker = decisionMaker;
-        this.retryRoutingResolver = retryRoutingResolver;
+        this.retryRequestRecorder = retryRequestRecorder;
         this.payloadParser = payloadParser;
         this.meterRegistry = meterRegistry;
         this.clock = clock;
@@ -198,20 +193,19 @@ public class AuthErrorRecordedConsumer {
                     return;
                 }
 
-                // 실패 기록: PROCESSING -> RETRY_WAIT (DB에 retry 정책을 기록)
-                processedMessageStore.markRetryWait(
+                // 실패 기록과 retry publish request 저장은 같은 DB 트랜잭션에서 수행한다.
+                retryRequestRecorder.recordRetryRequest(
                         outboxId,
+                        eventType,
+                        aggregateType,
+                        payload,
                         now,
-                        decision.nextRetryAt(),
-                        decision.nextRetryCount(),
-                        decision.lastError()
+                        decision
                 );
 
                 log.warn("[AuthErrorConsumer] RETRY -> outboxId={}, nextRetryCount={}, nextRetryAt={}, err={}",
                         outboxId, decision.nextRetryCount(), decision.nextRetryAt(), decision.lastError());
 
-                // 재발행(헤더 유지 + retry 갱신)
-                republishToRetryExchange(payload, eventType, message, decision);
                 // retry_enqueue_rate 분자
                 consumeCounter(eventType, MetricsConfig.RESULT_RETRY).increment();
                 retryEnqueueCounter(eventType, decision.nextRetryCount(), MetricsConfig.REASON_RETRYABLE).increment();
@@ -229,37 +223,6 @@ public class AuthErrorRecordedConsumer {
         headers.put("aggregateType", aggregateType);
         headers.put(RETRY_HEADER, retry);
         return headers;
-    }
-
-    private void republishToRetryExchange(String payload, String eventType, Message original, OutboxDecision decision) {
-        String retryExchange = retryRoutingResolver.retryExchange(eventType);
-        String routingKey = retryRoutingResolver.resolve(eventType, decision.nextRetryCount());
-
-        rabbitTemplate.convertAndSend(
-                retryExchange,
-                routingKey,
-                payload,
-                msg -> {
-                    MessageProperties p = msg.getMessageProperties();
-                    p.setContentType(MessageProperties.CONTENT_TYPE_JSON);
-
-                    // 기존 헤더 유지
-                    p.getHeaders().putAll(original.getMessageProperties().getHeaders());
-
-                    // retry 카운트 업데이트 (policy 기반)
-                    p.setHeader(RETRY_HEADER, decision.nextRetryCount());
-
-                    // lastError/nextRetryAt 기록
-                    if (decision.lastError() != null) {
-                        p.setHeader("x-last-error", decision.lastError());
-                    }
-                    if (decision.nextRetryAt() != null) {
-                        p.setHeader("x-next-retry-at", decision.nextRetryAt().toString());
-                }
-
-                return msg;
-            }
-        );
     }
 
     private void recordLatencyMetrics(String eventType,
