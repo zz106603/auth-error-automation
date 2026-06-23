@@ -36,6 +36,12 @@ auth-error-automation은 다음 책임을 가진다.
 - `outbox_id` 기준 1:1
 - lease 기반으로 동시 처리 방지
 
+### RetryPublishRequest
+- Consumer retryable failure 이후 RabbitMQ retry queue 발행 의도를 기록하는 내부 원장
+- Consumer는 retry 메시지를 RabbitMQ에 직접 publish하지 않는다.
+- `processed_message`의 `RETRY_WAIT` 전이와 RetryPublishRequest 저장은 같은 DB 트랜잭션에서 수행한다.
+- 별도 poller가 RetryPublishRequest를 claim한 뒤 publisher confirm/return을 확인하며 retry exchange로 발행한다.
+
 ### EventDescriptor
 - Outbox에 저장되는 이벤트 계약
 - aggregateType, eventType, idempotencyKey를 정의
@@ -223,6 +229,11 @@ DEAD
 - Consumer와 Outbox는 동일 RetryPolicy 사용
 - Retry Queue:
     - 10s / 1m / 10m TTL ladder
+- Consumer retry publish:
+    - Consumer는 retryable failure 시 retry publish request를 DB에 먼저 저장한다.
+    - 원본 메시지 ACK는 retry publish request가 durable하게 저장된 이후에만 수행한다.
+    - retry publish request poller는 RabbitMQ publisher confirm/return을 확인한 뒤 PUBLISHED로 마감한다.
+    - retry publish 실패 시 request는 유실하지 않고 재발행 대상으로 남긴다.
 - DLQ:
     - Non-retryable 예외
     - maxRetries 초과
