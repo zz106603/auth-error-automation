@@ -3,18 +3,15 @@ package com.yunhwan.auth.error.infra.messaging.consumer.listener;
 import com.rabbitmq.client.Channel;
 import com.yunhwan.auth.error.domain.consumer.ProcessedStatus;
 import com.yunhwan.auth.error.domain.outbox.decision.OutboxDecision;
-import com.yunhwan.auth.error.common.exception.NonRetryableAuthErrorException;
-import com.yunhwan.auth.error.infra.metrics.MetricTags;
 import com.yunhwan.auth.error.infra.metrics.MetricsConfig;
+import com.yunhwan.auth.error.infra.messaging.consumer.parser.JacksonAuthErrorAnalysisRequestedPayloadParser;
 import com.yunhwan.auth.error.infra.messaging.rabbit.RabbitTopologyConfig;
 import com.yunhwan.auth.error.infra.support.HeaderUtils;
 import com.yunhwan.auth.error.usecase.consumer.ConsumerDecisionMaker;
 import com.yunhwan.auth.error.usecase.consumer.ConsumerRetryRequestRecorder;
 import com.yunhwan.auth.error.usecase.consumer.handler.AuthErrorHandler;
 import com.yunhwan.auth.error.usecase.consumer.port.ProcessedMessageStore;
-import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.MeterRegistry;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.amqp.core.Message;
 import org.springframework.amqp.rabbit.annotation.RabbitListener;
@@ -22,36 +19,47 @@ import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.messaging.handler.annotation.Header;
 import org.springframework.stereotype.Component;
 
+import java.time.Clock;
 import java.time.Duration;
 import java.time.OffsetDateTime;
-import java.util.HashMap;
-import java.util.Map;
+
+import static com.yunhwan.auth.error.infra.messaging.consumer.listener.ConsumerListenerSupport.buildHeaders;
+import static com.yunhwan.auth.error.infra.messaging.consumer.listener.ConsumerListenerSupport.consumeCounter;
+import static com.yunhwan.auth.error.infra.messaging.consumer.listener.ConsumerListenerSupport.deadReason;
+import static com.yunhwan.auth.error.infra.messaging.consumer.listener.ConsumerListenerSupport.dlqCounter;
+import static com.yunhwan.auth.error.infra.messaging.consumer.listener.ConsumerListenerSupport.payloadSizeBytes;
+import static com.yunhwan.auth.error.infra.messaging.consumer.listener.ConsumerListenerSupport.retryEnqueueCounter;
 
 @Slf4j
 @Component
 public class AuthErrorAnalysisRequestedConsumer {
 
-    private static final String RETRY_HEADER = "x-retry-count";
     private static final Duration LEASE_DURATION = Duration.ofSeconds(60);
 
     private final AuthErrorHandler handler;
     private final ProcessedMessageStore processedMessageStore;
     private final ConsumerDecisionMaker decisionMaker;
     private final ConsumerRetryRequestRecorder retryRequestRecorder;
+    private final JacksonAuthErrorAnalysisRequestedPayloadParser payloadParser;
     private final MeterRegistry meterRegistry;
+    private final Clock clock;
 
     public AuthErrorAnalysisRequestedConsumer(
             @Qualifier("authErrorAnalysisRequestedHandler") AuthErrorHandler handler,
             ProcessedMessageStore processedMessageStore,
             ConsumerDecisionMaker decisionMaker,
             ConsumerRetryRequestRecorder retryRequestRecorder,
-            MeterRegistry meterRegistry
+            JacksonAuthErrorAnalysisRequestedPayloadParser payloadParser,
+            MeterRegistry meterRegistry,
+            Clock clock
     ) {
         this.handler = handler;
         this.processedMessageStore = processedMessageStore;
         this.decisionMaker = decisionMaker;
         this.retryRequestRecorder = retryRequestRecorder;
+        this.payloadParser = payloadParser;
         this.meterRegistry = meterRegistry;
+        this.clock = clock;
     }
 
     @RabbitListener(queues = RabbitTopologyConfig.Q_ANALYSIS)
@@ -70,8 +78,8 @@ public class AuthErrorAnalysisRequestedConsumer {
             log.warn("[AnalysisConsumer] missing outboxId -> reject(DLQ). payloadSizeBytes={}",
                     payloadSizeBytes(payload));
             // 사유 고정값으로 집계
-            dlqCounter(eventTypeOrUnknown(eventType), MetricsConfig.REASON_MISSING_OUTBOX_ID).increment();
-            consumeCounter(eventTypeOrUnknown(eventType), MetricsConfig.RESULT_REJECT).increment();
+            dlqCounter(meterRegistry, RabbitTopologyConfig.Q_ANALYSIS, eventType, MetricsConfig.REASON_MISSING_OUTBOX_ID).increment();
+            consumeCounter(meterRegistry, RabbitTopologyConfig.Q_ANALYSIS, eventType, MetricsConfig.RESULT_REJECT).increment();
             channel.basicReject(tag, false);
             return;
         }
@@ -80,13 +88,23 @@ public class AuthErrorAnalysisRequestedConsumer {
             log.warn("[AnalysisConsumer] missing headers -> reject(DLQ). outboxId={}, eventType={}, aggregateType={}",
                     outboxId, eventType, aggregateType);
             // 헤더 계약 위반
-            dlqCounter(eventTypeOrUnknown(eventType), MetricsConfig.REASON_MISSING_HEADERS).increment();
-            consumeCounter(eventTypeOrUnknown(eventType), MetricsConfig.RESULT_REJECT).increment();
+            dlqCounter(meterRegistry, RabbitTopologyConfig.Q_ANALYSIS, eventType, MetricsConfig.REASON_MISSING_HEADERS).increment();
+            consumeCounter(meterRegistry, RabbitTopologyConfig.Q_ANALYSIS, eventType, MetricsConfig.RESULT_REJECT).increment();
             channel.basicReject(tag, false);
             return;
         }
 
-        OffsetDateTime now = OffsetDateTime.now();
+        try {
+            payloadParser.parse(payload, outboxId);
+        } catch (Exception e) {
+            log.warn("[AnalysisConsumer] invalid payload -> reject(DLQ). outboxId={}, err={}", outboxId, e.getMessage());
+            dlqCounter(meterRegistry, RabbitTopologyConfig.Q_ANALYSIS, eventType, MetricsConfig.REASON_INVALID_PAYLOAD).increment();
+            consumeCounter(meterRegistry, RabbitTopologyConfig.Q_ANALYSIS, eventType, MetricsConfig.RESULT_REJECT).increment();
+            channel.basicReject(tag, false);
+            return;
+        }
+
+        OffsetDateTime now = OffsetDateTime.now(clock);
         OffsetDateTime leaseUntil = now.plusSeconds(LEASE_DURATION.getSeconds());
 
         processedMessageStore.ensureRowExists(outboxId, now);
@@ -103,9 +121,9 @@ public class AuthErrorAnalysisRequestedConsumer {
 
             handler.handle(payload, buildHeaders(outboxId, eventType, aggregateType, currentRetry));
 
-            processedMessageStore.markDone(outboxId, OffsetDateTime.now());
+            processedMessageStore.markDone(outboxId, OffsetDateTime.now(clock));
             // consume_rate 기준선 (analysis)
-            consumeCounter(eventType, MetricsConfig.RESULT_SUCCESS).increment();
+            consumeCounter(meterRegistry, RabbitTopologyConfig.Q_ANALYSIS, eventType, MetricsConfig.RESULT_SUCCESS).increment();
             // E2E는 recorded 이벤트에서만 측정(중복 방지)
             channel.basicAck(tag, false);
 
@@ -123,8 +141,8 @@ public class AuthErrorAnalysisRequestedConsumer {
                 processedMessageStore.markDead(outboxId, now, decision.lastError());
                 log.error("[AnalysisConsumer] DEAD -> DLQ outboxId={}, err={}", outboxId, decision.lastError(), e);
                 // DLQ 전환 집계
-                consumeCounter(eventType, MetricsConfig.RESULT_DEAD).increment();
-                dlqCounter(eventType, deadReason(e)).increment();
+                consumeCounter(meterRegistry, RabbitTopologyConfig.Q_ANALYSIS, eventType, MetricsConfig.RESULT_DEAD).increment();
+                dlqCounter(meterRegistry, RabbitTopologyConfig.Q_ANALYSIS, eventType, deadReason(e)).increment();
                 channel.basicReject(tag, false);
                 return;
             }
@@ -142,62 +160,10 @@ public class AuthErrorAnalysisRequestedConsumer {
                     outboxId, decision.nextRetryCount(), decision.nextRetryAt(), decision.lastError());
 
             // retry_enqueue_rate 분자 (analysis)
-            consumeCounter(eventType, MetricsConfig.RESULT_RETRY).increment();
-            retryEnqueueCounter(eventType, decision.nextRetryCount(), MetricsConfig.REASON_RETRYABLE).increment();
+            consumeCounter(meterRegistry, RabbitTopologyConfig.Q_ANALYSIS, eventType, MetricsConfig.RESULT_RETRY).increment();
+            retryEnqueueCounter(meterRegistry, RabbitTopologyConfig.Q_ANALYSIS, eventType, decision.nextRetryCount(), MetricsConfig.REASON_RETRYABLE).increment();
 
             channel.basicAck(tag, false);
         }
-    }
-
-    private Map<String, Object> buildHeaders(Long outboxId, String eventType, String aggregateType, int retry) {
-        Map<String, Object> headers = new HashMap<>();
-        headers.put("outboxId", outboxId);
-        headers.put("eventType", eventType);
-        headers.put("aggregateType", aggregateType);
-        headers.put(RETRY_HEADER, retry);
-        return headers;
-    }
-
-    private Counter consumeCounter(String eventType, String result) {
-        // consume_rate 집계용
-        return Counter.builder(MetricsConfig.METRIC_CONSUME)
-                .tag(MetricsConfig.TAG_EVENT_TYPE, eventType)
-                .tag(MetricsConfig.TAG_QUEUE, RabbitTopologyConfig.Q_ANALYSIS)
-                .tag(MetricsConfig.TAG_RESULT, result)
-                .register(meterRegistry);
-    }
-
-    private Counter retryEnqueueCounter(String eventType, int nextRetryCount, String reason) {
-        // retry 횟수는 1/2/3+로만 집계
-        return Counter.builder(MetricsConfig.METRIC_RETRY_ENQUEUE)
-                .tag(MetricsConfig.TAG_EVENT_TYPE, eventType)
-                .tag(MetricsConfig.TAG_QUEUE, RabbitTopologyConfig.Q_ANALYSIS)
-                .tag(MetricsConfig.TAG_RETRY_BUCKET, MetricTags.retryBucket(nextRetryCount))
-                .tag(MetricsConfig.TAG_REASON, reason)
-                .register(meterRegistry);
-    }
-
-    private Counter dlqCounter(String eventType, String reason) {
-        // 사유는 고정값만 사용
-        return Counter.builder(MetricsConfig.METRIC_DLQ)
-                .tag(MetricsConfig.TAG_EVENT_TYPE, eventType)
-                .tag(MetricsConfig.TAG_QUEUE, RabbitTopologyConfig.Q_ANALYSIS)
-                .tag(MetricsConfig.TAG_REASON, reason)
-                .register(meterRegistry);
-    }
-
-    private String deadReason(Exception e) {
-        if (e instanceof NonRetryableAuthErrorException) {
-            return MetricsConfig.REASON_NON_RETRYABLE;
-        }
-        return MetricsConfig.REASON_MAX_RETRIES;
-    }
-
-    private String eventTypeOrUnknown(String eventType) {
-        return eventType == null ? "unknown" : eventType;
-    }
-
-    private int payloadSizeBytes(String payload) {
-        return payload == null ? 0 : payload.getBytes(java.nio.charset.StandardCharsets.UTF_8).length;
     }
 }
