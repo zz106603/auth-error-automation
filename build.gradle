@@ -48,5 +48,25 @@ repositories {
 }
 
 tasks.named('test') {
-	useJUnitPlatform()
+	useJUnitPlatform {
+		excludeTags 'integration'
+	}
+}
+
+tasks.register('quickTest', Test) {
+	description = 'Runs tests that do not require Docker/Testcontainers.'
+	group = 'verification'
+	useJUnitPlatform {
+		excludeTags 'integration'
+	}
+	shouldRunAfter test
+}
+
+tasks.register('integrationTest', Test) {
+	description = 'Runs Docker/Testcontainers-backed integration tests.'
+	group = 'verification'
+	useJUnitPlatform {
+		includeTags 'integration'
+	}
+	shouldRunAfter test
 }
