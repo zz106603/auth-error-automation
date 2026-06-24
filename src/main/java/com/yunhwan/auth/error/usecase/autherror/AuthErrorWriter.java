@@ -3,13 +3,13 @@ package com.yunhwan.auth.error.usecase.autherror;
 import com.yunhwan.auth.error.domain.autherror.AuthError;
 import com.yunhwan.auth.error.domain.outbox.OutboxMessage;
 import com.yunhwan.auth.error.domain.outbox.descriptor.OutboxEventDescriptor;
-import com.yunhwan.auth.error.infra.logging.AuthErrorEventLogger;
-import com.yunhwan.auth.error.infra.metrics.MetricsConfig;
 import com.yunhwan.auth.error.usecase.autherror.config.AuthErrorProperties;
 import com.yunhwan.auth.error.usecase.autherror.dto.AuthErrorRecordedPayload;
 import com.yunhwan.auth.error.usecase.autherror.dto.AuthErrorWriteCommand;
 import com.yunhwan.auth.error.usecase.autherror.dto.AuthErrorWriteResult;
+import com.yunhwan.auth.error.usecase.autherror.port.AuthErrorEventPublisher;
 import com.yunhwan.auth.error.usecase.autherror.port.AuthErrorStore;
+import com.yunhwan.auth.error.usecase.metrics.UsecaseMetrics;
 import com.yunhwan.auth.error.usecase.outbox.OutboxWriter;
 import com.yunhwan.auth.error.usecase.outbox.port.OutboxMessageStore;
 import io.micrometer.core.instrument.MeterRegistry;
@@ -34,7 +34,7 @@ public class AuthErrorWriter {
     private final Clock clock;
     private final AuthErrorProperties authErrorProperties;
     private final OutboxEventDescriptor<AuthErrorRecordedPayload> authErrorRecordedEventDescriptor;
-    private final AuthErrorEventLogger eventLogger;
+    private final AuthErrorEventPublisher eventPublisher;
     private final MeterRegistry meterRegistry;
     private final Timer ingestTransactionTimer;
 
@@ -45,7 +45,7 @@ public class AuthErrorWriter {
             Clock clock,
             AuthErrorProperties authErrorProperties,
             OutboxEventDescriptor<AuthErrorRecordedPayload> authErrorRecordedEventDescriptor,
-            AuthErrorEventLogger eventLogger,
+            AuthErrorEventPublisher eventPublisher,
             MeterRegistry meterRegistry
     ) {
         this.authErrorStore = authErrorStore;
@@ -54,10 +54,10 @@ public class AuthErrorWriter {
         this.clock = clock;
         this.authErrorProperties = authErrorProperties;
         this.authErrorRecordedEventDescriptor = authErrorRecordedEventDescriptor;
-        this.eventLogger = eventLogger;
+        this.eventPublisher = eventPublisher;
         this.meterRegistry = meterRegistry;
-        this.ingestTransactionTimer = Timer.builder(MetricsConfig.METRIC_INGEST_TRANSACTION)
-                .tag(MetricsConfig.TAG_EVENT_TYPE, authErrorRecordedEventDescriptor.eventType())
+        this.ingestTransactionTimer = Timer.builder(UsecaseMetrics.METRIC_INGEST_TRANSACTION)
+                .tag(UsecaseMetrics.TAG_EVENT_TYPE, authErrorRecordedEventDescriptor.eventType())
                 .register(meterRegistry);
     }
 
@@ -129,7 +129,7 @@ public class AuthErrorWriter {
                 // idempotency_key를 descriptor에서 뽑아서 이벤트 로그에 포함
                 String idemKey = authErrorRecordedEventDescriptor.idempotencyKey(payload);
                 // 이벤트 로그
-                eventLogger.recorded(saved, outbox.getId(), idemKey);
+                eventPublisher.recorded(saved, outbox.getId(), idemKey);
 
                 return new AuthErrorWriteResult(saved.getId(), outbox.getId());
             } catch (DuplicateKeyException e) {

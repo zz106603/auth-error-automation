@@ -4,15 +4,17 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.yunhwan.auth.error.common.exception.NonRetryableAuthErrorException;
 import com.yunhwan.auth.error.usecase.autherror.dto.AuthErrorAnalysisRequestedPayload;
+import com.yunhwan.auth.error.usecase.consumer.port.AuthErrorAnalysisRequestedPayloadParser;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
 @Component
 @RequiredArgsConstructor
-public class JacksonAuthErrorAnalysisRequestedPayloadParser {
+public class JacksonAuthErrorAnalysisRequestedPayloadParser implements AuthErrorAnalysisRequestedPayloadParser {
 
     private final ObjectMapper objectMapper;
 
+    @Override
     public AuthErrorAnalysisRequestedPayload parse(String payloadJson, Long outboxId) {
         try {
             AuthErrorAnalysisRequestedPayload payload =

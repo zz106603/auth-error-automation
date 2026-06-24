@@ -1,7 +1,7 @@
 package com.yunhwan.auth.error.usecase.outbox;
 
 import com.yunhwan.auth.error.domain.outbox.OutboxMessage;
-import com.yunhwan.auth.error.infra.metrics.MetricsConfig;
+import com.yunhwan.auth.error.usecase.metrics.UsecaseMetrics;
 import com.yunhwan.auth.error.usecase.outbox.config.OutboxProperties;
 import com.yunhwan.auth.error.usecase.outbox.dto.OutboxClaimResult;
 import com.yunhwan.auth.error.usecase.outbox.port.OwnerResolver;
@@ -30,7 +30,7 @@ public class OutboxPoller {
         this.ownerResolver = ownerResolver;
         this.props = props;
         this.meterRegistry = meterRegistry;
-        this.outboxPollerClaimTimer = Timer.builder(MetricsConfig.METRIC_OUTBOX_POLLER_CLAIM)
+        this.outboxPollerClaimTimer = Timer.builder(UsecaseMetrics.METRIC_OUTBOX_POLLER_CLAIM)
                 .register(meterRegistry);
     }
 

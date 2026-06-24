@@ -3,6 +3,7 @@ package com.yunhwan.auth.error.infra.logging;
 import com.yunhwan.auth.error.domain.autherror.AuthError;
 import com.yunhwan.auth.error.domain.autherror.AuthErrorStatus;
 import com.yunhwan.auth.error.domain.autherror.analysis.AuthErrorAnalysisResult;
+import com.yunhwan.auth.error.usecase.autherror.port.AuthErrorEventPublisher;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
@@ -18,10 +19,11 @@ import static net.logstash.logback.argument.StructuredArguments.entries;
 @Slf4j
 @Component
 @RequiredArgsConstructor
-public class AuthErrorEventLogger {
+public class AuthErrorEventLogger implements AuthErrorEventPublisher {
 
     private final Clock clock;
 
+    @Override
     public void analysisCompleted(AuthError authError, AuthErrorAnalysisResult r) {
         Map<String, Object> evt = createBaseEvent("auth_error.analysis_completed", authError);
 
@@ -38,6 +40,7 @@ public class AuthErrorEventLogger {
         log.info("auth_error_event {}", entries(evt));
     }
 
+    @Override
     public void recorded(AuthError authError, Long outboxId, String idempotencyKey) {
         Map<String, Object> evt = createBaseEvent("auth_error.recorded", authError);
         evt.put("outbox_id", outboxId);
@@ -59,6 +62,7 @@ public class AuthErrorEventLogger {
         log.info("auth_error_event {}", entries(evt));
     }
 
+    @Override
     public void decisionApplied(
             AuthError authError,
             AuthErrorStatus fromStatus,

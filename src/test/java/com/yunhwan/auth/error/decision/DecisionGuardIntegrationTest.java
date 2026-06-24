@@ -1,11 +1,11 @@
 package com.yunhwan.auth.error.decision;
 
-import com.yunhwan.auth.error.app.api.auth.dto.ApplyAnalysisDecisionCommand;
 import com.yunhwan.auth.error.common.exception.NonRetryableAuthErrorException;
 import com.yunhwan.auth.error.domain.autherror.AuthError;
 import com.yunhwan.auth.error.domain.autherror.AuthErrorStatus;
 import com.yunhwan.auth.error.testsupport.base.AbstractIntegrationTest;
 import com.yunhwan.auth.error.usecase.autherror.AuthErrorDecisionApplier;
+import com.yunhwan.auth.error.usecase.autherror.dto.ApplyAnalysisDecisionCommand;
 import com.yunhwan.auth.error.usecase.autherror.dto.DecisionActor;
 import com.yunhwan.auth.error.usecase.autherror.dto.DecisionType;
 import com.yunhwan.auth.error.usecase.autherror.port.AuthErrorStore;

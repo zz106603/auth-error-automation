@@ -3,8 +3,8 @@ package com.yunhwan.auth.error.usecase.outbox;
 import com.yunhwan.auth.error.common.exception.NonRetryablePublishException;
 import com.yunhwan.auth.error.domain.outbox.OutboxMessage;
 import com.yunhwan.auth.error.domain.outbox.decision.OutboxDecision;
-import com.yunhwan.auth.error.infra.metrics.MetricsConfig;
 import com.yunhwan.auth.error.usecase.consumer.policy.RetryPolicy;
+import com.yunhwan.auth.error.usecase.metrics.UsecaseMetrics;
 import com.yunhwan.auth.error.usecase.outbox.port.OutboxMessageStore;
 import com.yunhwan.auth.error.usecase.outbox.port.OutboxPublisher;
 import io.micrometer.core.instrument.MeterRegistry;
@@ -39,7 +39,7 @@ public class OutboxProcessor {
         this.retryPolicy = retryPolicy;
         this.clock = clock;
         this.meterRegistry = meterRegistry;
-        this.outboxPublishTimer = Timer.builder(MetricsConfig.METRIC_OUTBOX_PUBLISH)
+        this.outboxPublishTimer = Timer.builder(UsecaseMetrics.METRIC_OUTBOX_PUBLISH)
                 .register(meterRegistry);
     }
 

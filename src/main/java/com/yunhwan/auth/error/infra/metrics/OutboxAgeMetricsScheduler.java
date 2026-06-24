@@ -1,6 +1,7 @@
 package com.yunhwan.auth.error.infra.metrics;
 
 import com.yunhwan.auth.error.usecase.outbox.port.OutboxMessageStore;
+import com.yunhwan.auth.error.usecase.outbox.dto.OutboxAgeStats;
 import io.micrometer.core.instrument.Gauge;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.DistributionSummary;

@@ -2,11 +2,11 @@ package com.yunhwan.auth.error.usecase.consumer.handler;
 
 import com.yunhwan.auth.error.common.exception.NonRetryableAuthErrorException;
 import com.yunhwan.auth.error.domain.autherror.AuthError;
-import com.yunhwan.auth.error.infra.messaging.consumer.parser.JacksonAuthErrorAnalysisRequestedPayloadParser;
 import com.yunhwan.auth.error.usecase.autherror.analysis.AuthErrorAnalysisService;
 import com.yunhwan.auth.error.usecase.autherror.cluster.AuthErrorClusterLinker;
 import com.yunhwan.auth.error.usecase.autherror.dto.AuthErrorAnalysisRequestedPayload;
 import com.yunhwan.auth.error.usecase.autherror.port.AuthErrorStore;
+import com.yunhwan.auth.error.usecase.consumer.port.AuthErrorAnalysisRequestedPayloadParser;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
@@ -22,7 +22,7 @@ public class AuthErrorAnalysisRequestedHandlerImpl implements AuthErrorHandler{
     private final AuthErrorStore authErrorStore;
     private final AuthErrorAnalysisService analysisService;
     private final AuthErrorClusterLinker clusterLinker;
-    private final JacksonAuthErrorAnalysisRequestedPayloadParser parser;
+    private final AuthErrorAnalysisRequestedPayloadParser parser;
 
     @Override
     @Transactional

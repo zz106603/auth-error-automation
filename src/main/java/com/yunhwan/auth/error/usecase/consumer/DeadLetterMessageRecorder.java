@@ -6,11 +6,11 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.yunhwan.auth.error.domain.consumer.DeadLetterReasonCode;
 import com.yunhwan.auth.error.domain.consumer.DeadLetterMessage;
 import com.yunhwan.auth.error.domain.consumer.ReplayStatus;
-import com.yunhwan.auth.error.infra.support.HeaderUtils;
 import com.yunhwan.auth.error.usecase.consumer.dto.DeadLetterMessageRecordCommand;
 import com.yunhwan.auth.error.usecase.consumer.dto.DeadLetterSourceSnapshot;
 import com.yunhwan.auth.error.usecase.consumer.port.DeadLetterMessageStore;
 import com.yunhwan.auth.error.usecase.consumer.port.DeadLetterSourceLookup;
+import com.yunhwan.auth.error.usecase.consumer.support.ConsumerHeaderUtils;
 import lombok.RequiredArgsConstructor;
 import org.springframework.amqp.core.Message;
 import org.springframework.stereotype.Service;
@@ -205,7 +205,7 @@ public class DeadLetterMessageRecorder {
 
     private Integer retryCount(Map<String, Object> headers) {
         try {
-            return HeaderUtils.getRetryCount(headers);
+            return ConsumerHeaderUtils.getRetryCount(headers);
         } catch (Exception e) {
             return null;
         }

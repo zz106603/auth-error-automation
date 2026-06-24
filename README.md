@@ -83,6 +83,7 @@ HikariCP saturation 등을 Grafana로 관측하도록 구성했습니다.
 ## Package Structure
 
 헥사고날 아키텍처(Hexagonal Architecture)를 기반으로 **도메인(Domain)**, **유스케이스(UseCase)**, **인프라(Infra)** 계층을 명확히 분리했습니다.
+계층 의존성 규칙은 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)에 정리되어 있습니다.
 
 ```text
 com.yunhwan.auth.error

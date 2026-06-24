@@ -1,7 +1,7 @@
 package com.yunhwan.auth.error.usecase.outbox.port;
 
 import com.yunhwan.auth.error.domain.outbox.OutboxMessage;
-import com.yunhwan.auth.error.infra.metrics.OutboxAgeStats;
+import com.yunhwan.auth.error.usecase.outbox.dto.OutboxAgeStats;
 
 import java.time.OffsetDateTime;
 import java.util.List;

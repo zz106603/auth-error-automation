@@ -6,11 +6,11 @@ import com.yunhwan.auth.error.domain.autherror.AuthError;
 import com.yunhwan.auth.error.domain.autherror.AuthErrorStatus;
 import com.yunhwan.auth.error.domain.outbox.OutboxMessage;
 import com.yunhwan.auth.error.domain.outbox.descriptor.OutboxEventDescriptor;
-import com.yunhwan.auth.error.infra.metrics.MetricsConfig;
 import com.yunhwan.auth.error.usecase.autherror.dto.AuthErrorAnalysisRequestedPayload;
 import com.yunhwan.auth.error.usecase.autherror.dto.AuthErrorRecordedPayload;
 import com.yunhwan.auth.error.usecase.autherror.port.AuthErrorStore;
 import com.yunhwan.auth.error.usecase.consumer.port.AuthErrorPayloadParser;
+import com.yunhwan.auth.error.usecase.metrics.UsecaseMetrics;
 import com.yunhwan.auth.error.usecase.outbox.OutboxWriter;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.Timer;
@@ -53,7 +53,7 @@ public class AuthErrorRecordHandlerImpl implements AuthErrorHandler {
         final AuthErrorRecordedPayload payload;
         try {
             payload = recordTimer(
-                    MetricsConfig.METRIC_RECORDED_HANDLER_PAYLOAD_PARSE,
+                    UsecaseMetrics.METRIC_RECORDED_HANDLER_PAYLOAD_PARSE,
                     eventType,
                     () -> payloadParser.parse(payloadJson, outboxId)
             );
@@ -63,7 +63,7 @@ public class AuthErrorRecordHandlerImpl implements AuthErrorHandler {
 
         // 2) 대상 도메인 없으면 재시도 의미 없음
         AuthError authError = recordTimer(
-                MetricsConfig.METRIC_RECORDED_HANDLER_AUTH_ERROR_LOOKUP,
+                UsecaseMetrics.METRIC_RECORDED_HANDLER_AUTH_ERROR_LOOKUP,
                 eventType,
                 () -> authErrorStore.findById(payload.authErrorId())
                         .orElseThrow(() -> new NonRetryableAuthErrorException(
@@ -73,7 +73,7 @@ public class AuthErrorRecordHandlerImpl implements AuthErrorHandler {
 
         // 3) 멱등 가드: terminal 또는 이미 analysis 요청한 건 예외 없이 종료(=성공 취급)
         AuthErrorStatus status = recordTimer(
-                MetricsConfig.METRIC_RECORDED_HANDLER_IDEMPOTENCY_GUARD,
+                UsecaseMetrics.METRIC_RECORDED_HANDLER_IDEMPOTENCY_GUARD,
                 eventType,
                 authError::getStatus
         );
@@ -99,7 +99,7 @@ public class AuthErrorRecordHandlerImpl implements AuthErrorHandler {
             );
 
             OutboxMessage outbox = recordTimer(
-                    MetricsConfig.METRIC_RECORDED_HANDLER_OUTBOX_ENQUEUE_TOTAL,
+                    UsecaseMetrics.METRIC_RECORDED_HANDLER_OUTBOX_ENQUEUE_TOTAL,
                     eventType,
                     () -> outboxWriter.enqueue(
                             analysisRequestedDescriptor,
@@ -173,7 +173,7 @@ public class AuthErrorRecordHandlerImpl implements AuthErrorHandler {
             return supplier.get();
         } finally {
             Timer.builder(metricName)
-                    .tag(MetricsConfig.TAG_EVENT_TYPE, eventType)
+                    .tag(UsecaseMetrics.TAG_EVENT_TYPE, eventType)
                     .register(meterRegistry)
                     .record(System.nanoTime() - startedAt, TimeUnit.NANOSECONDS);
         }
