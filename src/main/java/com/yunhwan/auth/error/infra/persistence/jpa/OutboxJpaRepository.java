@@ -24,19 +24,24 @@ public interface OutboxJpaRepository extends JpaRepository<OutboxMessage, Long> 
      */
     @Query(value = """
     INSERT INTO outbox_message
-      (aggregate_type, aggregate_id, event_type, payload, idempotency_key)
+      (aggregate_type, aggregate_id, event_type, payload, idempotency_key, payload_hash)
     VALUES
-      (:aggregateType, :aggregateId, :eventType, CAST(:payloadJson AS jsonb), :idempotencyKey)
+      (:aggregateType, :aggregateId, :eventType, CAST(:payloadJson AS jsonb), :idempotencyKey, :payloadHash)
     ON CONFLICT (idempotency_key)
-    DO UPDATE SET updated_at = :now
+    DO UPDATE SET
+      updated_at = :now,
+      payload_hash = COALESCE(outbox_message.payload_hash, :payloadHash)
+    WHERE outbox_message.payload_hash = :payloadHash
+       OR (outbox_message.payload_hash IS NULL AND outbox_message.payload = CAST(:payloadJson AS jsonb))
     RETURNING *
     """, nativeQuery = true)
-    OutboxMessage upsertReturning(
+    Optional<OutboxMessage> upsertReturning(
             @Param("aggregateType") String aggregateType,
             @Param("aggregateId") String aggregateId,
             @Param("eventType") String eventType,
             @Param("payloadJson") String payloadJson,
             @Param("idempotencyKey") String idempotencyKey,
+            @Param("payloadHash") String payloadHash,
             @Param("now") OffsetDateTime now
     );
 

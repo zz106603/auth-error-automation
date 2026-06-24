@@ -52,6 +52,9 @@ public class OutboxMessage {
     @Column(name = "idempotency_key", nullable = false, length = 200)
     private String idempotencyKey;
 
+    @Column(name = "payload_hash", length = 64)
+    private String payloadHash;
+
     @Enumerated(EnumType.STRING)
     @Column(name = "status", nullable = false, length = 30)
     private OutboxStatus status = OutboxStatus.PENDING;
@@ -91,7 +94,8 @@ public class OutboxMessage {
             String aggregateId,
             String eventType,
             String payloadJson,
-            String idempotencyKey
+            String idempotencyKey,
+            String payloadHash
     ) {
         OutboxMessage m = new OutboxMessage();
         m.aggregateType = aggregateType;
@@ -99,6 +103,7 @@ public class OutboxMessage {
         m.eventType = eventType;
         m.payload = payloadJson;
         m.idempotencyKey = idempotencyKey;
+        m.payloadHash = payloadHash;
         m.nextRetryAt = null;
         return m;
     }

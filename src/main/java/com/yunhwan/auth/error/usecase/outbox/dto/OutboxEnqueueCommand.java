@@ -5,6 +5,7 @@ public record OutboxEnqueueCommand(
         String aggregateId,
         String eventType,
         String payloadJson,
-        String idempotencyKey
+        String idempotencyKey,
+        String payloadHash
 ) {
 }

@@ -26,6 +26,7 @@ public interface OutboxMessageStore {
             String eventType,
             String payloadJson,
             String idempotencyKey,
+            String payloadHash,
             OffsetDateTime now
     );
 

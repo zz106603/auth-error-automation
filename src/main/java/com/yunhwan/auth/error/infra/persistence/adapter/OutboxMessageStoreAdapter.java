@@ -1,5 +1,6 @@
 package com.yunhwan.auth.error.infra.persistence.adapter;
 
+import com.yunhwan.auth.error.common.exception.OutboxPayloadMismatchException;
 import com.yunhwan.auth.error.domain.outbox.OutboxMessage;
 import com.yunhwan.auth.error.infra.metrics.MetricsConfig;
 import com.yunhwan.auth.error.infra.metrics.OutboxAgeStats;
@@ -9,6 +10,7 @@ import com.yunhwan.auth.error.usecase.outbox.port.OutboxMessageStore;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.Timer;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Repository;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -22,6 +24,7 @@ import java.util.concurrent.TimeUnit;
 @Repository
 @RequiredArgsConstructor
 @Transactional
+@Slf4j
 public class OutboxMessageStoreAdapter implements OutboxMessageStore {
 
     private final OutboxJpaRepository repo;
@@ -54,11 +57,12 @@ public class OutboxMessageStoreAdapter implements OutboxMessageStore {
 
     @Override
     public OutboxMessage upsertReturning(String aggregateType, String aggregateId, String eventType,
-                                         String payloadJson, String idempotencyKey, OffsetDateTime now) {
+                                         String payloadJson, String idempotencyKey, String payloadHash, OffsetDateTime now) {
         return recordRecordedPathTimer(
                 MetricsConfig.METRIC_OUTBOX_UPSERT_RETURNING,
                 eventType,
-                () -> repo.upsertReturning(aggregateType, aggregateId, eventType, payloadJson, idempotencyKey, now)
+                () -> repo.upsertReturning(aggregateType, aggregateId, eventType, payloadJson, idempotencyKey, payloadHash, now)
+                        .orElseThrow(() -> payloadMismatch(eventType, idempotencyKey, payloadHash))
         );
     }
 
@@ -114,6 +118,12 @@ public class OutboxMessageStoreAdapter implements OutboxMessageStore {
         if (v == null) return 0;
         if (v instanceof Number n) return n.longValue();
         return Long.parseLong(Objects.toString(v));
+    }
+
+    private OutboxPayloadMismatchException payloadMismatch(String eventType, String idempotencyKey, String payloadHash) {
+        log.error("[OutboxMessageStore] payload hash mismatch. eventType={}, idempotencyKey={}, newPayloadHash={}",
+                eventType, idempotencyKey, payloadHash);
+        return new OutboxPayloadMismatchException(idempotencyKey);
     }
 
     private <T> T recordRecordedPathTimer(String metricName, String eventType, TimedSupplier<T> supplier) {
