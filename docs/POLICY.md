@@ -42,6 +42,13 @@ auth-error-automation은 다음 책임을 가진다.
 - `processed_message`의 `RETRY_WAIT` 전이와 RetryPublishRequest 저장은 같은 DB 트랜잭션에서 수행한다.
 - 별도 poller가 RetryPublishRequest를 claim한 뒤 publisher confirm/return을 확인하며 retry exchange로 발행한다.
 
+### DeadLetterMessage
+- RabbitMQ DLQ에 도착한 메시지를 감사하기 위한 내부 원장
+- DLQ Consumer는 payload 원문을 로그로 남기지 않고 payload hash/size, outboxId, reason code만 기록한다.
+- DLQ Consumer는 `dead_letter_message` upsert가 성공한 뒤에만 RabbitMQ 메시지를 ACK한다.
+- 동일 DLQ 메시지가 중복 delivery되면 `dedupe_key` 기준으로 기존 row의 `delivery_count`, `last_seen_at`을 갱신한다.
+- Replay 실행 API/worker는 아직 제공하지 않으며, `replay_status`는 운영 판단 상태만 표현한다.
+
 ### EventDescriptor
 - Outbox에 저장되는 이벤트 계약
 - aggregateType, eventType, idempotencyKey를 정의
@@ -238,6 +245,10 @@ DEAD
     - Non-retryable 예외
     - maxRetries 초과
     - malformed message / missing headers
+    - DLQ 도착 메시지는 `dead_letter_message`에 먼저 기록된 뒤 ACK된다.
+    - 원장 저장 실패 시 ACK하지 않아 RabbitMQ 또는 DB 중 적어도 한 곳에 장애 증거가 남아야 한다.
+    - 중복 DLQ delivery는 `dedupe_key` unique upsert로 같은 dead letter의 반복 도착으로 기록한다.
+    - Reason code는 `DeadLetterReasonCode` enum 값만 사용한다.
 
 ---
 
