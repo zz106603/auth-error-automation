@@ -1,5 +1,6 @@
 package com.yunhwan.auth.error.usecase.outbox;
 
+import com.yunhwan.auth.error.common.exception.OutboxPayloadMismatchException;
 import com.yunhwan.auth.error.domain.outbox.OutboxStatus;
 import com.yunhwan.auth.error.infra.autherror.outbox.AuthErrorAnalysisRequestedEventDescriptor;
 import com.yunhwan.auth.error.infra.autherror.outbox.AuthErrorRecordedEventDescriptor;
@@ -16,6 +17,7 @@ import java.time.OffsetDateTime;
 import java.util.UUID;
 
 import static org.assertj.core.api.AssertionsForClassTypes.assertThat;
+import static org.assertj.core.api.AssertionsForClassTypes.assertThatThrownBy;
 
 /**
  * Outbox Writer의 메시지 적재 및 멱등성 보장 로직을 검증하는 통합 테스트.
@@ -73,6 +75,9 @@ class OutboxWriterIntegrationTest extends AbstractStubIntegrationTest {
         assertThat(found.get().getIdempotencyKey())
                 .withFailMessage("멱등성 키는 정책 형식(auth_error:recorded:{authErrorId})이어야 합니다.")
                 .isEqualTo("auth_error:recorded:" + authErrorId);
+        assertThat(found.get().getPayloadHash())
+                .withFailMessage("Outbox payload hash는 신규 메시지 저장 시 함께 기록되어야 합니다.")
+                .isNotBlank();
     }
 
     @Test
@@ -108,6 +113,40 @@ class OutboxWriterIntegrationTest extends AbstractStubIntegrationTest {
     }
 
     @Test
+    @DisplayName("[TS-03] recorded 이벤트는 동일 멱등키에 다른 payload가 들어오면 계약 위반으로 실패한다")
+    void recorded_동일_멱등키_다른_payload는_실패한다() {
+        long authErrorId = Math.abs(UUID.randomUUID().getMostSignificantBits());
+        OffsetDateTime occurredAt = OffsetDateTime.now();
+        String aggregateId = String.valueOf(authErrorId);
+        AuthErrorRecordedPayload firstPayload = new AuthErrorRecordedPayload(
+                authErrorId,
+                "REQ-RECORDED-A-" + UUID.randomUUID(),
+                occurredAt,
+                occurredAt
+        );
+        AuthErrorRecordedPayload changedPayload = new AuthErrorRecordedPayload(
+                authErrorId,
+                "REQ-RECORDED-B-" + UUID.randomUUID(),
+                occurredAt,
+                occurredAt.plusSeconds(1)
+        );
+
+        var first = outboxWriter.enqueue(authErrorRecordedEventDescriptor, aggregateId, firstPayload);
+        String idemKey = authErrorRecordedEventDescriptor.idempotencyKey(firstPayload);
+
+        assertThatThrownBy(() -> outboxWriter.enqueue(authErrorRecordedEventDescriptor, aggregateId, changedPayload))
+                .isInstanceOf(OutboxPayloadMismatchException.class)
+                .hasMessageContaining(idemKey);
+
+        assertThat(countByIdempotencyKey(idemKey))
+                .withFailMessage("payload mismatch가 발생해도 기존 outbox_message 외 추가 row가 생기면 안 됩니다.")
+                .isEqualTo(1L);
+        assertThat(outboxMessageStore.findByIdempotencyKey(idemKey).orElseThrow().getId())
+                .withFailMessage("payload mismatch 후에도 기존 메시지가 보존되어야 합니다.")
+                .isEqualTo(first.getId());
+    }
+
+    @Test
     @DisplayName("[TS-04] analysis_requested 이벤트도 authErrorId 기준 멱등키로 1건만 저장된다")
     void analysis_requested_멱등성_키_및_단일_로우_보장() {
         long authErrorId = Math.abs(UUID.randomUUID().getMostSignificantBits());
@@ -139,6 +178,40 @@ class OutboxWriterIntegrationTest extends AbstractStubIntegrationTest {
         assertThat(countByIdempotencyKey(idemKey))
                 .withFailMessage("멱등성 키 기준으로 outbox_message는 1건만 존재해야 합니다.")
                 .isEqualTo(1L);
+    }
+
+    @Test
+    @DisplayName("[TS-04] analysis_requested 이벤트도 동일 멱등키에 다른 payload가 들어오면 계약 위반으로 실패한다")
+    void analysis_requested_동일_멱등키_다른_payload는_실패한다() {
+        long authErrorId = Math.abs(UUID.randomUUID().getMostSignificantBits());
+        OffsetDateTime occurredAt = OffsetDateTime.now();
+        String aggregateId = String.valueOf(authErrorId);
+        AuthErrorAnalysisRequestedPayload firstPayload = new AuthErrorAnalysisRequestedPayload(
+                authErrorId,
+                "REQ-ANALYSIS-A-" + UUID.randomUUID(),
+                occurredAt,
+                occurredAt.plusSeconds(1)
+        );
+        AuthErrorAnalysisRequestedPayload changedPayload = new AuthErrorAnalysisRequestedPayload(
+                authErrorId,
+                "REQ-ANALYSIS-B-" + UUID.randomUUID(),
+                occurredAt,
+                occurredAt.plusSeconds(2)
+        );
+
+        var first = outboxWriter.enqueue(authErrorAnalysisRequestedEventDescriptor, aggregateId, firstPayload);
+        String idemKey = authErrorAnalysisRequestedEventDescriptor.idempotencyKey(firstPayload);
+
+        assertThatThrownBy(() -> outboxWriter.enqueue(authErrorAnalysisRequestedEventDescriptor, aggregateId, changedPayload))
+                .isInstanceOf(OutboxPayloadMismatchException.class)
+                .hasMessageContaining(idemKey);
+
+        assertThat(countByIdempotencyKey(idemKey))
+                .withFailMessage("payload mismatch가 발생해도 기존 outbox_message 외 추가 row가 생기면 안 됩니다.")
+                .isEqualTo(1L);
+        assertThat(outboxMessageStore.findByIdempotencyKey(idemKey).orElseThrow().getId())
+                .withFailMessage("payload mismatch 후에도 기존 메시지가 보존되어야 합니다.")
+                .isEqualTo(first.getId());
     }
 
     private long countByIdempotencyKey(String idempotencyKey) {

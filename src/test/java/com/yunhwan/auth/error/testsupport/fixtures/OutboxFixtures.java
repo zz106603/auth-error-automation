@@ -5,8 +5,12 @@ import com.yunhwan.auth.error.usecase.outbox.port.OutboxMessageStore;
 import org.springframework.context.annotation.Profile;
 import org.springframework.stereotype.Component;
 
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.time.Clock;
 import java.time.OffsetDateTime;
+import java.util.HexFormat;
 import java.util.Optional;
 
 @Profile("test")
@@ -30,9 +34,18 @@ public class OutboxFixtures {
                 "AUTH_ERROR_DETECTED_V1",
                 payload,
                 "AUTH_ERROR:" + scopedReqId + ":AUTH_ERROR_DETECTED_V1",
+                payloadHash(payload),
                 OffsetDateTime.now(clock)
         );
     }
 
+    private String payloadHash(String payload) {
+        try {
+            MessageDigest digest = MessageDigest.getInstance("SHA-256");
+            return HexFormat.of().formatHex(digest.digest(payload.getBytes(StandardCharsets.UTF_8)));
+        } catch (NoSuchAlgorithmException e) {
+            throw new IllegalStateException("SHA-256 digest algorithm is unavailable", e);
+        }
+    }
 
 }
