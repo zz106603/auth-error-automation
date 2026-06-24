@@ -37,6 +37,8 @@ class ConsumerContractViolationDlqIntegrationTest extends AbstractStubIntegratio
         dlqObserver.reset();
         purgeQueue(RabbitTopologyConfig.Q_RECORDED);
         purgeQueue(RabbitTopologyConfig.DLQ_RECORDED);
+        purgeQueue(RabbitTopologyConfig.Q_ANALYSIS);
+        purgeQueue(RabbitTopologyConfig.DLQ_ANALYSIS);
         jdbcTemplate.update("delete from retry_publish_request");
         jdbcTemplate.update("delete from processed_message");
         jdbcTemplate.update("delete from outbox_message");
@@ -78,6 +80,38 @@ class ConsumerContractViolationDlqIntegrationTest extends AbstractStubIntegratio
                 });
 
         // Then: 무부작용
+        assertThat(count("processed_message")).isEqualTo(beforeProcessed);
+        assertThat(count("auth_error")).isEqualTo(beforeAuthError);
+        assertThat(count("outbox_message")).isEqualTo(beforeOutbox);
+    }
+
+    @Test
+    @DisplayName("[TS-11] analysis 필수 헤더 누락도 즉시 DLQ + 무부작용")
+    void analysis_필수_헤더_누락_시_즉시_DLQ_및_무부작용() {
+        long beforeProcessed = count("processed_message");
+        long beforeAuthError = count("auth_error");
+        long beforeOutbox = count("outbox_message");
+
+        long outboxId = Math.abs(UUID.randomUUID().getMostSignificantBits());
+        Map<String, Object> headers = new HashMap<>();
+        headers.put("outboxId", outboxId);
+        headers.put("aggregateType", "auth_error");
+
+        injector.sendWithHeaders(
+                RabbitTopologyConfig.EXCHANGE,
+                RabbitTopologyConfig.RK_ANALYSIS_REQUESTED,
+                "{\"val\":\"missing-header\"}",
+                headers
+        );
+
+        Awaitility.await()
+                .atMost(Duration.ofSeconds(10))
+                .pollInterval(Duration.ofMillis(100))
+                .untilAsserted(() -> {
+                    assertThat(dlqObserver.count()).isEqualTo(1L);
+                    assertThat(dlqObserver.lastOutboxId()).isEqualTo(outboxId);
+                });
+
         assertThat(count("processed_message")).isEqualTo(beforeProcessed);
         assertThat(count("auth_error")).isEqualTo(beforeAuthError);
         assertThat(count("outbox_message")).isEqualTo(beforeOutbox);

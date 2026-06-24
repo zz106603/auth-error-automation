@@ -42,6 +42,8 @@ class ConsumerPayloadPoisonDlqIntegrationTest extends AbstractStubIntegrationTes
         dlqObserver.reset();
         purgeQueue(RabbitTopologyConfig.Q_RECORDED);
         purgeQueue(RabbitTopologyConfig.DLQ_RECORDED);
+        purgeQueue(RabbitTopologyConfig.Q_ANALYSIS);
+        purgeQueue(RabbitTopologyConfig.DLQ_ANALYSIS);
         jdbcTemplate.update("delete from retry_publish_request");
         jdbcTemplate.update("delete from processed_message");
         jdbcTemplate.update("delete from outbox_message");
@@ -85,12 +87,59 @@ class ConsumerPayloadPoisonDlqIntegrationTest extends AbstractStubIntegrationTes
                 .atMost(Duration.ofSeconds(10))
                 .pollInterval(Duration.ofMillis(100))
                 .untilAsserted(() -> {
-                    drainDlqIfPresent();
+                    drainDlqIfPresent(RabbitTopologyConfig.DLQ_RECORDED);
                     assertThat(dlqObserver.count()).isEqualTo(1L);
                     assertThat(dlqObserver.lastOutboxId()).isEqualTo(outboxId);
                 });
 
         // Then: 무부작용
+        assertThat(count("processed_message")).isEqualTo(beforeProcessed);
+        assertThat(count("auth_error")).isEqualTo(beforeAuthError);
+        assertThat(count("outbox_message")).isEqualTo(beforeOutbox);
+
+        String status = jdbcTemplate.queryForObject(
+                "select status from auth_error where id = ?",
+                String.class,
+                authErrorId
+        );
+        assertThat(status).isEqualTo("NEW");
+    }
+
+    @Test
+    @DisplayName("[TS-12] analysis payload 파싱 실패도 즉시 DLQ + 무부작용")
+    void analysis_payload_파싱_실패_시_즉시_DLQ_및_무부작용() {
+        long authErrorId = insertAuthError("REQ-ANALYSIS-POISON-" + UUID.randomUUID());
+        long beforeProcessed = count("processed_message");
+        long beforeAuthError = count("auth_error");
+        long beforeOutbox = count("outbox_message");
+
+        long outboxId = Math.abs(UUID.randomUUID().getMostSignificantBits());
+        Map<String, Object> headers = new HashMap<>();
+        headers.put("outboxId", outboxId);
+        headers.put("eventType", RabbitTopologyConfig.RK_ANALYSIS_REQUESTED);
+        headers.put("aggregateType", "auth_error");
+
+        String invalidPayload = "{"
+                + "\"requestId\":\"REQ-ANALYSIS-POISON\","
+                + "\"requestedAt\":\"" + OffsetDateTime.now() + "\""
+                + "}";
+
+        injector.sendWithHeaders(
+                RabbitTopologyConfig.EXCHANGE,
+                RabbitTopologyConfig.RK_ANALYSIS_REQUESTED,
+                invalidPayload,
+                headers
+        );
+
+        Awaitility.await()
+                .atMost(Duration.ofSeconds(10))
+                .pollInterval(Duration.ofMillis(100))
+                .untilAsserted(() -> {
+                    drainDlqIfPresent(RabbitTopologyConfig.DLQ_ANALYSIS);
+                    assertThat(dlqObserver.count()).isEqualTo(1L);
+                    assertThat(dlqObserver.lastOutboxId()).isEqualTo(outboxId);
+                });
+
         assertThat(count("processed_message")).isEqualTo(beforeProcessed);
         assertThat(count("auth_error")).isEqualTo(beforeAuthError);
         assertThat(count("outbox_message")).isEqualTo(beforeOutbox);
@@ -119,11 +168,11 @@ class ConsumerPayloadPoisonDlqIntegrationTest extends AbstractStubIntegrationTes
         );
     }
 
-    private void drainDlqIfPresent() {
+    private void drainDlqIfPresent(String queue) {
         if (dlqObserver.count() > 0) {
             return;
         }
-        Message msg = rabbitTemplate.receive(RabbitTopologyConfig.DLQ_RECORDED);
+        Message msg = rabbitTemplate.receive(queue);
         if (msg == null) {
             return;
         }
