@@ -67,7 +67,8 @@ public class AuthErrorAnalysisRequestedConsumer {
         long tag = message.getMessageProperties().getDeliveryTag();
 
         if (outboxId == null) {
-            log.warn("[AnalysisConsumer] missing outboxId -> reject(DLQ). payload={}", payload);
+            log.warn("[AnalysisConsumer] missing outboxId -> reject(DLQ). payloadSizeBytes={}",
+                    payloadSizeBytes(payload));
             // 사유 고정값으로 집계
             dlqCounter(eventTypeOrUnknown(eventType), MetricsConfig.REASON_MISSING_OUTBOX_ID).increment();
             consumeCounter(eventTypeOrUnknown(eventType), MetricsConfig.RESULT_REJECT).increment();
@@ -194,5 +195,9 @@ public class AuthErrorAnalysisRequestedConsumer {
 
     private String eventTypeOrUnknown(String eventType) {
         return eventType == null ? "unknown" : eventType;
+    }
+
+    private int payloadSizeBytes(String payload) {
+        return payload == null ? 0 : payload.getBytes(java.nio.charset.StandardCharsets.UTF_8).length;
     }
 }

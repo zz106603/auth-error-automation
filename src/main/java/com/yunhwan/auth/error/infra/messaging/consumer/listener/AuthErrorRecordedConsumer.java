@@ -81,7 +81,8 @@ public class AuthErrorRecordedConsumer {
 
         // 1) outboxId 없으면 형식 불량 → DLQ 격리
         if (outboxId == null) {
-            log.warn("[AuthErrorConsumer] missing outboxId -> reject(DLQ). payload={}", payload);
+            log.warn("[AuthErrorConsumer] missing outboxId -> reject(DLQ). payloadSizeBytes={}",
+                    payloadSizeBytes(payload));
             // 사유 고정값으로 집계
             dlqCounter(eventTypeOrUnknown(eventType), MetricsConfig.REASON_MISSING_OUTBOX_ID).increment();
             // 유효성 실패는 consume reject로 집계
@@ -287,6 +288,10 @@ public class AuthErrorRecordedConsumer {
 
     private String eventTypeOrUnknown(String eventType) {
         return eventType == null ? "unknown" : eventType;
+    }
+
+    private int payloadSizeBytes(String payload) {
+        return payload == null ? 0 : payload.getBytes(java.nio.charset.StandardCharsets.UTF_8).length;
     }
 
     private void recordStageTimer(String metricName, String eventType, long durationNanos) {
