@@ -148,6 +148,8 @@ com.yunhwan.auth.error
 - Poller / Consumer / Retry / DLQ / Reaper 시나리오 검증
 - 의도적으로 실패를 주입하여 재시도/격리/멱등 처리의 정합성 확인
 
+테스트 실행 기준선과 Docker/Testcontainers 사전 점검 절차는 [docs/TESTING.md](docs/TESTING.md)에 정리되어 있습니다.
+
 ---
 
 ## Tech Stack
