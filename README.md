@@ -14,6 +14,7 @@
 Transactional Outbox 기반 인증 오류 파이프라인의
 E2E latency, Retry/DLQ depth, RabbitMQ throughput,
 HikariCP saturation 등을 Grafana로 관측하도록 구성했습니다.
+SLI/SLO 후보와 장애 대응 기준은 [docs/SLI_SLO.md](docs/SLI_SLO.md), [docs/RUNBOOK.md](docs/RUNBOOK.md)에 정리되어 있습니다.
 
 > 단순 API latency가 아니라,
 > backlog age / retry depth / publish-consume imbalance까지 함께 추적합니다.
