@@ -290,6 +290,7 @@ $retryPressure = Get-MetricStats -Kpis $kpis -MetricName "retry_pressure_ratio"
 $outbox95 = Get-MetricStats -Kpis $kpis -MetricName "outbox_age_p95_ms"
 $outbox99 = Get-MetricStats -Kpis $kpis -MetricName "outbox_age_p99_ms"
 $outboxSlope = Get-MetricStats -Kpis $kpis -MetricName "outbox_age_slope_ms_per_10s"
+$outboxBacklog = Get-MetricStats -Kpis $kpis -MetricName "outbox_backlog_count"
 $rReady = Get-MetricStats -Kpis $kpis -MetricName "rabbit_ready_depth"
 $rUnacked = Get-MetricStats -Kpis $kpis -MetricName "rabbit_unacked_depth"
 $rRetry = Get-MetricStats -Kpis $kpis -MetricName "rabbit_retry_depth"
@@ -304,6 +305,8 @@ $runtimeConsumerMaxConc = Get-MetricStats -Kpis $kpis -MetricName "runtime_consu
 $runtimePrefetch = Get-MetricStats -Kpis $kpis -MetricName "runtime_consumer_prefetch"
 $server5xx = Get-MetricStats -Kpis $kpis -MetricName "server_5xx_rate"
 $drainMetric = Get-Prop -Object $kpis -Name "drain_time_sec"
+$postRunPublishCounter = Get-Prop -Object (Get-Prop -Object $kpis -Name "publish_total_post_run_delta") -Name "value"
+$postRunConsumeCounter = Get-Prop -Object (Get-Prop -Object $kpis -Name "consume_total_post_run_delta") -Name "value"
 
 $k6Err = $null
 $k6Summary = Get-Prop -Object $snapshot -Name "k6_summary"
@@ -341,10 +344,12 @@ $lines.Add(("| HTTP p95 / p99 (server, ms) | {0} / {1} | max |" -f (FmtNum (SecT
 $lines.Add(("| ingest->consume p95 / p99 / max (ms) | {0} / {1} / {2} | max |" -f (FmtNum (SecToMsOrNull $ingestToConsumeP95.max) 2), (FmtNum (SecToMsOrNull $ingestToConsumeP99.max) 2), (FmtNum (SecToMsOrNull $ingestToConsumeMax.max) 2)))
 $lines.Add(("| client event->consume p95 / p99 / max (ms) | {0} / {1} / {2} | max |" -f (FmtNum (SecToMsOrNull $clientToConsumeP95.max) 2), (FmtNum (SecToMsOrNull $clientToConsumeP99.max) 2), (FmtNum (SecToMsOrNull $clientToConsumeMax.max) 2)))
 $lines.Add(("| publish / consume RPS | {0} / {1} | avg |" -f (FmtNum $publish.avg 3), (FmtNum $consume.avg 3)))
+$lines.Add(("| publish / consume post-run delta | {0} / {1} | drain-inclusive counter increase |" -f (FmtNum $postRunPublishCounter 3), (FmtNum $postRunConsumeCounter 3)))
 $lines.Add(("| retry enqueue RPS | {0} | avg |" -f (FmtNum $retry.avg 3)))
 $lines.Add(("| retry pressure ratio | {0} | max |" -f (FmtPercent $retryPressure.max)))
 $lines.Add(("| outbox age p95 / p99 (ms) | {0} / {1} | max |" -f (FmtNum $outbox95.max 2), (FmtNum $outbox99.max 2)))
 $lines.Add(("| outbox age slope (ms/10s) | {0} | max |" -f (FmtNum $outboxSlope.max 2)))
+$lines.Add(("| outbox backlog count | {0} | max |" -f (FmtNum $outboxBacklog.max 0)))
 $lines.Add(("| Rabbit ready / unacked | {0} / {1} | max |" -f (FmtNum $rReady.max 3), (FmtNum $rUnacked.max 3)))
 $lines.Add(("| Rabbit retry / DLQ depth | {0} / {1} | max |" -f (FmtNum $rRetry.max 3), (FmtNum $rDlq.max 3)))
 $lines.Add(("| Hikari active / pending / max | {0} / {1} / {2} | max |" -f (FmtNum $hikariActive.max 3), (FmtNum $hikariPending.max 3), (FmtNum $hikariMax.max 3)))

@@ -52,6 +52,7 @@ function Get-State {
     rabbit_unacked = Invoke-PromScalar 'sum(rabbitmq_detailed_queue_messages_unacked{queue!=""})'
     retry_depth = Invoke-PromScalar 'sum(rabbitmq_detailed_queue_messages_ready{queue=~".*\\.retry\\..*"}) + sum(rabbitmq_detailed_queue_messages_unacked{queue=~".*\\.retry\\..*"})'
     dlq_depth = Invoke-PromScalar 'sum(rabbitmq_detailed_queue_messages_ready{queue=~".*\\.dlq"}) + sum(rabbitmq_detailed_queue_messages_unacked{queue=~".*\\.dlq"})'
+    outbox_backlog_count = Invoke-PromScalar 'max(auth_error_outbox_backlog_count)'
     outbox_age_p95_ms = Invoke-PromScalar 'max(auth_error_outbox_age_p95)'
     outbox_age_p99_ms = Invoke-PromScalar 'max(auth_error_outbox_age_p99)'
     hikari_pending = Invoke-PromScalar 'max(hikaricp_connections_pending)'
@@ -67,6 +68,7 @@ function Test-DrainState {
     $State.rabbit_unacked -le $QueueTolerance -and
     $State.retry_depth -le $QueueTolerance -and
     $State.dlq_depth -le $QueueTolerance -and
+    $State.outbox_backlog_count -le $QueueTolerance -and
     $State.outbox_age_p95_ms -le $OutboxAgeToleranceMs -and
     $State.outbox_age_p99_ms -le $OutboxAgeToleranceMs -and
     $State.hikari_pending -le $PendingTolerance
@@ -86,16 +88,17 @@ function Write-StateSample {
     rabbit_unacked = $State.rabbit_unacked
     retry_depth = $State.retry_depth
     dlq_depth = $State.dlq_depth
+    outbox_backlog_count = $State.outbox_backlog_count
     outbox_age_p95_ms = $State.outbox_age_p95_ms
     outbox_age_p99_ms = $State.outbox_age_p99_ms
     hikari_pending = $State.hikari_pending
   }
 
   ($sample | ConvertTo-Json -Compress) | Add-Content -Encoding utf8 $jsonlPath
-  ("[{0}] drained={1} ready={2:N3} unacked={3:N3} retry={4:N3} dlq={5:N3} outbox_p95={6:N3} outbox_p99={7:N3} hikari_pending={8:N3}" -f `
+  ("[{0}] drained={1} ready={2:N3} unacked={3:N3} retry={4:N3} dlq={5:N3} outbox_count={6:N3} outbox_p95={7:N3} outbox_p99={8:N3} hikari_pending={9:N3}" -f `
     $sample.timestamp, $sample.drained.ToString().ToLowerInvariant(), $sample.rabbit_ready, $sample.rabbit_unacked,
-    $sample.retry_depth, $sample.dlq_depth, $sample.outbox_age_p95_ms, $sample.outbox_age_p99_ms,
-    $sample.hikari_pending) | Add-Content -Encoding utf8 $logPath
+    $sample.retry_depth, $sample.dlq_depth, $sample.outbox_backlog_count,
+    $sample.outbox_age_p95_ms, $sample.outbox_age_p99_ms, $sample.hikari_pending) | Add-Content -Encoding utf8 $logPath
 }
 
 function Write-DrainSummary {

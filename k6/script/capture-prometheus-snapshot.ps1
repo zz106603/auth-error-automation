@@ -707,6 +707,33 @@ function Read-DrainTimeSecOrNull {
   return $null
 }
 
+function Read-DrainTimestampOrNull {
+  param([string]$Dir)
+
+  $path = Join-Path $Dir "post_run_drain.samples.jsonl"
+  if (-not (Test-Path $path)) {
+    return $null
+  }
+
+  $lines = @(Get-Content $path | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
+  if ((Get-SafeCount $lines) -eq 0) {
+    return $null
+  }
+
+  foreach ($line in $lines) {
+    try {
+      $obj = $line | ConvertFrom-Json
+      if ($obj.drained -eq $true -and $obj.timestamp) {
+        return [DateTimeOffset]::Parse([string]$obj.timestamp)
+      }
+    } catch {
+      continue
+    }
+  }
+
+  return $null
+}
+
 function Detect-CounterResets {
   param([object]$Points)
 
@@ -744,6 +771,45 @@ function Build-AlignedRatioPoints {
     })
   }
   return $out
+}
+
+function Parse-InstantScalarOrNull {
+  param([object]$Result)
+
+  $arr = To-ObjectArray -Value $Result
+  if ((Get-SafeCount $arr) -eq 0) { return $null }
+
+  try {
+    $row = $arr[0]
+    if ($null -eq $row.value) { return $null }
+    $valueArr = To-ObjectArray -Value $row.value
+    if ((Get-SafeCount $valueArr) -lt 2) { return $null }
+    $raw = [string]$valueArr[1]
+    if ($raw -eq "NaN" -or $raw -eq "nan" -or $raw -eq "+Inf" -or $raw -eq "-Inf") { return $null }
+    return [double]::Parse($raw, [Globalization.CultureInfo]::InvariantCulture)
+  } catch {
+    return $null
+  }
+}
+
+function Add-ScalarKpi {
+  param(
+    [hashtable]$Kpis,
+    [string]$Id,
+    [string]$Unit,
+    [string]$Promql,
+    [object]$Value,
+    [string]$Source,
+    [string]$ObservedAt
+  )
+
+  $Kpis[$Id] = [pscustomobject]@{
+    unit = $Unit
+    promql = $Promql
+    source = $Source
+    observed_at = $ObservedAt
+    value = $Value
+  }
 }
 
 $scenarioName = Resolve-Scenario -InputScenario $Scenario -Id $TestId
@@ -808,6 +874,14 @@ if ($runEnd -le $runStart) {
 $startSec = To-UnixSec -Dt $runStart
 $endSec = To-UnixSec -Dt $runEnd
 $step = "${StepSec}s"
+$drainObservedAt = Read-DrainTimestampOrNull -Dir $RunDir
+$postRunObservation = $runEnd
+if ($null -ne $drainObservedAt -and $drainObservedAt -gt $postRunObservation) {
+  # Leave room for the next Prometheus scrape after drain is observed.
+  $postRunObservation = $drainObservedAt.AddSeconds($StepSec)
+}
+$postRunObservationSec = To-UnixSec -Dt $postRunObservation
+$postRunWindowSec = [int][Math]::Max(1, $postRunObservationSec - $startSec)
 
 $slicePlan = Parse-K6SlicePlanOrEmpty -Path $K6SummaryPath
 $holdWindows = Build-HoldWindowsOrEmpty -Slices $slicePlan -RunStartSec $startSec -RunEndSec $endSec
@@ -846,7 +920,7 @@ $queries = @(
   [ordered]@{ id = "processed_message_claim_processing_update_max_seconds"; type = "range"; unit = "seconds"; query = 'max(auth_error_processed_message_claim_processing_update_seconds_max{event_type="auth.error.recorded.v1",queue="auth.error.recorded.q"})' },
   [ordered]@{ id = "processed_message_mark_done_p95_seconds"; type = "range"; unit = "seconds"; query = 'histogram_quantile(0.95, sum by (le) (rate(auth_error_processed_message_mark_done_seconds_bucket{event_type="auth.error.recorded.v1",queue="auth.error.recorded.q"}[1m])))' },
   [ordered]@{ id = "processed_message_mark_done_max_seconds"; type = "range"; unit = "seconds"; query = 'max(auth_error_processed_message_mark_done_seconds_max{event_type="auth.error.recorded.v1",queue="auth.error.recorded.q"})' },
-  [ordered]@{ id = "ingest_to_consume_overflow_ratio_120s"; type = "range"; unit = "ratio"; query = 'clamp_min((sum(rate(auth_error_ingest_to_consume_seconds_count{event_type="auth.error.recorded.v1",queue="auth.error.recorded.q",result="success"}[1m])) - sum(rate(auth_error_ingest_to_consume_seconds_bucket{event_type="auth.error.recorded.v1",queue="auth.error.recorded.q",result="success",le="120.0"}[1m]))), 0) / clamp_min(sum(rate(auth_error_ingest_to_consume_seconds_count{event_type="auth.error.recorded.v1",queue="auth.error.recorded.q",result="success"}[1m])), 1e-9)' },
+  [ordered]@{ id = "ingest_to_consume_overflow_ratio_120s"; type = "range"; unit = "ratio"; query = 'max(max_over_time(auth_error_ingest_to_consume_seconds_max{event_type="auth.error.recorded.v1",queue="auth.error.recorded.q",result="success"}[1m]) > bool 120)' },
   [ordered]@{ id = "publish_rps"; type = "range"; unit = "rps"; query = 'sum(rate(auth_error_publish_total{event_type="auth.error.recorded.v1",result="success"}[1m]))' },
   [ordered]@{ id = "consume_rps"; type = "range"; unit = "rps"; query = 'sum(rate(auth_error_consume_total{event_type="auth.error.recorded.v1",queue="auth.error.recorded.q",result="success"}[1m]))' },
   [ordered]@{ id = "retry_enqueue_rps"; type = "range"; unit = "rps"; query = 'sum(rate(auth_error_retry_enqueue_total{event_type="auth.error.recorded.v1",queue="auth.error.recorded.q"}[1m]))' },
@@ -854,6 +928,7 @@ $queries = @(
   [ordered]@{ id = "outbox_age_p95_ms"; type = "range"; unit = "ms"; query = 'max(auth_error_outbox_age_p95)' },
   [ordered]@{ id = "outbox_age_p99_ms"; type = "range"; unit = "ms"; query = 'max(auth_error_outbox_age_p99)' },
   [ordered]@{ id = "outbox_age_slope_ms_per_10s"; type = "range"; unit = "ms_per_10s"; query = 'max(auth_error_outbox_age_slope_ms_per_10s)' },
+  [ordered]@{ id = "outbox_backlog_count"; type = "range"; unit = "messages"; query = 'max(auth_error_outbox_backlog_count)' },
   [ordered]@{ id = "rabbit_ready_depth"; type = "range"; unit = "messages"; query = 'sum(rabbitmq_detailed_queue_messages_ready{queue="auth.error.recorded.q"})' },
   [ordered]@{ id = "rabbit_unacked_depth"; type = "range"; unit = "messages"; query = 'sum(rabbitmq_detailed_queue_messages_unacked{queue="auth.error.recorded.q"})' },
   [ordered]@{ id = "rabbit_retry_depth"; type = "range"; unit = "messages"; query = 'sum(rabbitmq_detailed_queue_messages_ready{queue=~".*\\.retry\\..*"}) + sum(rabbitmq_detailed_queue_messages_unacked{queue=~".*\\.retry\\..*"})' },
@@ -908,10 +983,34 @@ foreach ($q in $queries) {
   }
 }
 
+$postRunCounterQueries = @(
+  [ordered]@{ id = "ingest_total_post_run_delta"; unit = "count"; query = ('sum(increase(auth_error_ingest_total{{result="success"}}[{0}s]))' -f $postRunWindowSec) },
+  [ordered]@{ id = "publish_total_post_run_delta"; unit = "count"; query = ('sum(increase(auth_error_publish_total{{event_type="auth.error.recorded.v1",result="success"}}[{0}s]))' -f $postRunWindowSec) },
+  [ordered]@{ id = "consume_total_post_run_delta"; unit = "count"; query = ('sum(increase(auth_error_consume_total{{event_type="auth.error.recorded.v1",queue="auth.error.recorded.q",result="success"}}[{0}s]))' -f $postRunWindowSec) }
+)
+$postRunCounterValues = @{}
+foreach ($q in $postRunCounterQueries) {
+  try {
+    $raw = Invoke-PromQuery -BaseUrl $PrometheusBaseUrl -Query $q.query -TimeSec $postRunObservationSec
+    $value = Parse-InstantScalarOrNull -Result $raw
+    $postRunCounterValues[$q.id] = $value
+    if ($null -eq $value) {
+      $anomalies.Add("post_run_counter_no_data:$($q.id)")
+    }
+  } catch {
+    $postRunCounterValues[$q.id] = $null
+    $anomalies.Add("post_run_counter_failed:$($q.id):$($_.Exception.Message)")
+  }
+}
+
 # k6 summary values (if present) are included for traceability.
 $k6ErrorRate = $null
 if ($k6Kv.ContainsKey("http_req_failed_rate")) {
   $k6ErrorRate = [double]$k6Kv["http_req_failed_rate"]
+}
+$k6HttpReqs = $null
+if ($k6Kv.ContainsKey("http_reqs")) {
+  $k6HttpReqs = [double]$k6Kv["http_reqs"]
 }
 
 # Counter reset anomaly detection.
@@ -980,6 +1079,67 @@ function Add-Check {
 if ($null -eq $rules) {
   Add-Check -Name "rules_loaded" -Status "UNKNOWN" -Detail "No rules loaded from $RulesPath"
 } else {
+  $criticalQueryIds = @(
+    "ingest_rps",
+    "http_server_p95_seconds",
+    "http_server_p99_seconds",
+    "ingest_to_consume_p95_seconds",
+    "ingest_to_consume_p99_seconds",
+    "ingest_to_consume_max_seconds",
+    "ingest_to_consume_overflow_ratio_120s",
+    "publish_rps",
+    "consume_rps",
+    "outbox_age_p95_ms",
+    "outbox_age_p99_ms",
+    "outbox_age_slope_ms_per_10s",
+    "outbox_backlog_count",
+    "rabbit_ready_depth",
+    "rabbit_unacked_depth",
+    "hikari_active",
+    "hikari_pending",
+    "hikari_max",
+    "runtime_hikari_max_pool_size",
+    "runtime_consumer_concurrency",
+    "runtime_consumer_prefetch",
+    "server_5xx_rate"
+  )
+  $missingCritical = @()
+  foreach ($id in $criticalQueryIds) {
+    if (-not $statsMap.ContainsKey($id) -or [int]$statsMap[$id].samples -eq 0) {
+      $missingCritical += $id
+    }
+  }
+  if ((Get-SafeCount $missingCritical) -gt 0) {
+    Add-Check -Name "critical_snapshot_queries_present" -Status "UNKNOWN" -Detail ("missing critical query data: {0}" -f ($missingCritical -join ", "))
+  } else {
+    Add-Check -Name "critical_snapshot_queries_present" -Status "PASS" -Detail ("all critical snapshot queries returned data: {0}" -f (Get-SafeCount $criticalQueryIds))
+  }
+
+  $missingPostRunCounters = @()
+  foreach ($id in @("ingest_total_post_run_delta", "publish_total_post_run_delta", "consume_total_post_run_delta")) {
+    if (-not $postRunCounterValues.ContainsKey($id) -or $null -eq $postRunCounterValues[$id]) {
+      $missingPostRunCounters += $id
+    }
+  }
+  if ((Get-SafeCount $missingPostRunCounters) -gt 0) {
+    Add-Check -Name "post_run_counters_present" -Status "UNKNOWN" -Detail ("missing post-run counter data: {0}" -f ($missingPostRunCounters -join ", "))
+  } else {
+    Add-Check -Name "post_run_counters_present" -Status "PASS" -Detail ("post-run counters captured at {0}; window={1}s" -f $postRunObservation.ToUniversalTime().ToString("o"), $postRunWindowSec)
+  }
+
+  if ($null -ne $k6HttpReqs -and (Get-SafeCount $missingPostRunCounters) -eq 0) {
+    $publishDelta = [double]$postRunCounterValues["publish_total_post_run_delta"]
+    $consumeDelta = [double]$postRunCounterValues["consume_total_post_run_delta"]
+    $minExpected = [Math]::Max(0.0, $k6HttpReqs - 1.0)
+    if ($publishDelta -lt $minExpected -or $consumeDelta -lt $minExpected) {
+      Add-Check -Name "post_run_counter_coverage" -Status "FAIL" -Detail ("k6_http_reqs={0:N0}, publish_delta={1:N3}, consume_delta={2:N3}" -f $k6HttpReqs, $publishDelta, $consumeDelta)
+    } else {
+      Add-Check -Name "post_run_counter_coverage" -Status "PASS" -Detail ("k6_http_reqs={0:N0}, publish_delta={1:N3}, consume_delta={2:N3}" -f $k6HttpReqs, $publishDelta, $consumeDelta)
+    }
+  } elseif ($null -eq $k6HttpReqs) {
+    Add-Check -Name "post_run_counter_coverage" -Status "UNKNOWN" -Detail "k6 http_reqs unavailable"
+  }
+
   if ($k6SummaryMissing) {
     Add-Check -Name "k6_summary_present" -Status "UNKNOWN" -Detail "k6 summary log missing; using provided run window only"
   } else {
@@ -1268,6 +1428,11 @@ $metadata = [ordered]@{
     duration_sec = [int][Math]::Round(($runEnd - $runStart).TotalSeconds)
     step_sec = $StepSec
   }
+  post_run_observation = [ordered]@{
+    observed_at = $postRunObservation.ToUniversalTime().ToString("o")
+    window_sec = $postRunWindowSec
+    drain_observed_at = if ($null -eq $drainObservedAt) { $null } else { $drainObservedAt.ToUniversalTime().ToString("o") }
+  }
   source_of_truth = "prometheus_snapshot_script"
   prometheus_base_url = $PrometheusBaseUrl
   git_sha = $repoSha
@@ -1314,6 +1479,17 @@ foreach ($q in $queries) {
     stats = To-ExportStats -Stats $statsMap[$id]
     points = @(To-PlainArray -Value $seriesMap[$id])
   }
+}
+
+foreach ($q in $postRunCounterQueries) {
+  Add-ScalarKpi `
+    -Kpis $snapshot.kpis `
+    -Id $q.id `
+    -Unit $q.unit `
+    -Promql $q.query `
+    -Value $postRunCounterValues[$q.id] `
+    -Source "prometheus_post_run_increase" `
+    -ObservedAt $postRunObservation.ToUniversalTime().ToString("o")
 }
 
 if ($null -ne $drainTimeSec) {

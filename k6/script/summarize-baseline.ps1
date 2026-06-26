@@ -420,20 +420,20 @@ if ($null -eq $dlqDepth) {
 }
 Write-Host ""
 
-# 3) E2E histogram quantiles (p95/p99) from baseline window delta (Recorded queue)
-Write-Host "## E2E (Timer histogram) p95/p99 estimated from bucket DELTA in baseline window (Recorded queue)"
-# find all bucket series for auth_error_e2e_seconds_bucket
-$bucketPrefix = "auth_error_e2e_seconds_bucket{"
+# 3) Ingest-to-consume histogram quantiles (p95/p99) from baseline window delta (Recorded queue)
+Write-Host "## Ingest->Consume (Timer histogram) p95/p99 estimated from bucket DELTA in baseline window (Recorded queue)"
+# find all bucket series for auth_error_ingest_to_consume_seconds_bucket
+$bucketPrefix = "auth_error_ingest_to_consume_seconds_bucket{"
 $bucketKeys = Extract-LinesByPrefix -map $map1 -prefix $bucketPrefix
 if ($bucketKeys.Count -eq 0) {
-  Write-Host " - auth_error_e2e_seconds_bucket: NOT FOUND"
+  Write-Host " - auth_error_ingest_to_consume_seconds_bucket: NOT FOUND"
 } else {
   # Aggregate all matching series by le using delta(last-first).
   $buckets = New-Object System.Collections.Generic.List[Object]
   $byLe = @{}
   foreach ($k in $bucketKeys) {
     # Extract labels content
-    if ($k -match '^auth_error_e2e_seconds_bucket\{(?<labels>.*)\}$') {
+    if ($k -match '^auth_error_ingest_to_consume_seconds_bucket\{(?<labels>.*)\}$') {
       $labels = $Matches.labels
       # split labels into map
       $pairs = $labels -split ','
