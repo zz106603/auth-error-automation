@@ -4,6 +4,7 @@ import { check } from "k6";
 import { Rate } from "k6/metrics";
 
 const CHECK_FAIL = new Rate("check_fail_rate");
+const RUN_ID = __ENV.TEST_ID || `LT-002E-${Date.now()}`;
 
 const SLICE_PROFILES = {
   default: [
@@ -195,7 +196,7 @@ export default function () {
   const occurredAt = nowKstIsoOffset();
   const rand = randomIntBetweenLocal(100000, 999999);
   const payload = JSON.stringify({
-    requestId: `REQ-${__VU}-${__ITER}-${rand}`,
+    requestId: `REQ-${RUN_ID}-${__VU}-${__ITER}-${rand}`,
     occurredAt: occurredAt,
     httpStatus: 401,
     exceptionClass: "org.springframework.security.authentication.BadCredentialsException",

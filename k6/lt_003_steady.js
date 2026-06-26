@@ -3,6 +3,7 @@ import { check } from "k6";
 import { Rate } from "k6/metrics";
 
 const CHECK_FAIL = new Rate("check_fail_rate");
+const RUN_ID = __ENV.TEST_ID || `LT-003-${Date.now()}`;
 
 function formatMetric(values, key) {
   if (!values || values[key] == null) return "n/a";
@@ -39,7 +40,7 @@ export default function () {
   const rand = Math.floor(Math.random() * 900000) + 100000;
 
   const payload = JSON.stringify({
-    requestId: `REQ-${__VU}-${__ITER}-${rand}`,
+    requestId: `REQ-${RUN_ID}-${__VU}-${__ITER}-${rand}`,
     occurredAt,
     httpStatus: 401,
     exceptionClass: "org.springframework.security.authentication.BadCredentialsException",

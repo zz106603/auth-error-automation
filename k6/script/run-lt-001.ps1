@@ -6,6 +6,7 @@ param(
   [string]$TestId = ("LT-001-" + (Get-Date -Format "yyyy-MM-dd_HHmmss")),
   [string]$PrometheusBaseUrl = "http://localhost:9090",
   [string]$ActuatorBaseUrl = "http://localhost:18081",
+  [int]$GateTimeoutSec = 300,
   [int]$DrainTimeoutSec = 300,
   [string]$ResultsRoot = "docs/loadtest/results",
   [string]$BaselinePath = "docs/loadtest/baseline/latest-baseline.json",
@@ -19,143 +20,64 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
-if ([string]::IsNullOrWhiteSpace($LocalScriptsDir)) {
-  $LocalScriptsDir = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot ".."))
-}
+$workflow = Join-Path $PSScriptRoot "invoke-loadtest-workflow.ps1"
 
-$resultsDir = Join-Path $LocalScriptsDir "results"
-if (-not (Test-Path $resultsDir)) { New-Item -ItemType Directory -Path $resultsDir | Out-Null }
-$runDir = Join-Path $resultsDir $TestId
-New-Item -ItemType Directory -Force -Path $runDir | Out-Null
-$logPath = Join-Path $runDir "lt_001_baseline.stdout.log"
-$k6SummaryPath = Join-Path $runDir ("lt_001_baseline-" + $TestId + ".log")
-if (Test-Path $logPath) { Remove-Item $logPath -Force }
-$postRunDrain = Join-Path $PSScriptRoot "verify-loadtest-drain.ps1"
-$captureAndReport = Join-Path $PSScriptRoot "capture-and-report-loadtest.ps1"
-$updateBaseline = Join-Path $PSScriptRoot "update-baseline-from-snapshot.ps1"
-$resetStateScript = Join-Path $PSScriptRoot "reset-loadtest-state.ps1"
-
-if ($ResetStateBeforeRun.IsPresent) {
-  Write-Host "==> Reset load-test state"
-  $purgeAllQueues = $ResetPurgeAllQueues.IsPresent
-  & $resetStateScript -PurgeAllQueues:$purgeAllQueues
-  if ($LASTEXITCODE -ne 0) {
-    Write-Host "==> Reset load-test state failed (exit=$LASTEXITCODE)" -ForegroundColor Red
-    exit $LASTEXITCODE
-  }
-}
-
-$dockerArgs = @(
-  "run","--rm","-i",
-  "--network",$Network,
-  "--env-file",$EnvFile,
-  "-e","K6_PROMETHEUS_RW_SERVER_URL=http://prometheus:9090/api/v1/write",
-  "-e","K6_PROMETHEUS_RW_TREND_STATS=p(95),p(99),avg,max",
-  "-e","K6_PROMETHEUS_RW_PUSH_INTERVAL=5s",
-  "-e","TEST_ID=$TestId",
-  "-e","RESULTS_DIR=/scripts/results/$TestId",
-  "-v","${LocalScriptsDir}:/scripts",
-  "grafana/k6:latest","run","-o","experimental-prometheus-rw",
-  "--tag","testid=$TestId",
-  $ScriptPathInContainer
-)
-
-Write-Host "==> Starting k6 baseline (testid=$TestId)"
-Write-Host "==> Log file: $logPath"
-Write-Host "==> Artifact directory: $runDir"
-
-$psi = New-Object System.Diagnostics.ProcessStartInfo
-$psi.FileName = "docker"
-$psi.Arguments = ($dockerArgs -join " ")
-$psi.RedirectStandardOutput = $true
-$psi.RedirectStandardError = $true
-$psi.UseShellExecute = $false
-$psi.CreateNoWindow = $true
-
-$proc = New-Object System.Diagnostics.Process
-$proc.StartInfo = $psi
-$runStartUtc = [DateTimeOffset]::UtcNow
-$null = $proc.Start()
-
-$writer = [System.IO.StreamWriter]::new($logPath, $true)
-
-while (-not $proc.HasExited) {
-  while (-not $proc.StandardOutput.EndOfStream) {
-    $line = $proc.StandardOutput.ReadLine()
-    $writer.WriteLine($line)
-  }
-  while (-not $proc.StandardError.EndOfStream) {
-    $line = $proc.StandardError.ReadLine()
-    $writer.WriteLine($line)
-  }
-  $writer.Flush()
-  Start-Sleep -Milliseconds 200
-}
-
-while (-not $proc.StandardOutput.EndOfStream) {
-  $line = $proc.StandardOutput.ReadLine()
-  $writer.WriteLine($line)
-}
-while (-not $proc.StandardError.EndOfStream) {
-  $line = $proc.StandardError.ReadLine()
-  $writer.WriteLine($line)
-}
-$writer.Flush()
-$writer.Dispose()
-$runEndUtc = [DateTimeOffset]::UtcNow
-
-Write-Host "==> k6 finished with exit code $($proc.ExitCode)"
-Write-Host "==> Summary file: $k6SummaryPath"
-Write-Host "==> Stdout log: $logPath"
-Write-Host "==> Final artifact directory: $runDir"
-
-Write-Host "==> Post-run drain verification"
-& $postRunDrain `
+& $workflow `
+  -Scenario "LT-001" `
+  -TestId $TestId `
+  -ScriptPathInContainer $ScriptPathInContainer `
+  -StdoutLogName "lt_001_baseline.stdout.log" `
+  -K6SummaryFilePrefix "lt_001_baseline" `
+  -Network $Network `
+  -EnvFile $EnvFile `
+  -LocalScriptsDir $LocalScriptsDir `
   -PrometheusBaseUrl $PrometheusBaseUrl `
   -ActuatorBaseUrl $ActuatorBaseUrl `
-  -OutputDir $runDir `
-  -TimeoutSec $DrainTimeoutSec
-$drainExitCode = $LASTEXITCODE
+  -GateTimeoutSec $GateTimeoutSec `
+  -DrainTimeoutSec $DrainTimeoutSec `
+  -ResultsRoot $ResultsRoot `
+  -BaselinePath $BaselinePath `
+  -RulesPath $RulesPath `
+  -Profile $Profile `
+  -ResetStateBeforeRun:$ResetStateBeforeRun `
+  -ResetPurgeAllQueues:$ResetPurgeAllQueues
 
-if ($proc.ExitCode -eq 0) {
-  Write-Host "==> Capture Prometheus snapshot + generate summary"
-  & $captureAndReport `
-    -TestId $TestId `
-    -Scenario "LT-001" `
-    -PrometheusBaseUrl $PrometheusBaseUrl `
-    -ResultsRoot $ResultsRoot `
-    -K6ResultsRoot (Join-Path $LocalScriptsDir "results") `
-    -RunDir $runDir `
-    -K6SummaryPath $k6SummaryPath `
-    -StartTime $runStartUtc.ToString("o") `
-    -EndTime $runEndUtc.ToString("o") `
-    -StepSec 5 `
-    -BaselinePath $BaselinePath `
-    -RulesPath $RulesPath `
-    -Profile $Profile
+$workflowExitCode = $LASTEXITCODE
+if ($workflowExitCode -ne 0) {
+  exit $workflowExitCode
+}
+
+if ($AutoUpdateBaseline) {
+  $updateBaseline = Join-Path $PSScriptRoot "update-baseline-from-snapshot.ps1"
+  $snapshotPath = Join-Path (Join-Path $ResultsRoot $TestId) "prometheus-snapshot.json"
+
+  if (-not (Test-Path $snapshotPath)) {
+    Write-Host "==> Baseline update blocked: snapshot not found: $snapshotPath" -ForegroundColor Yellow
+    exit 1
+  }
+
+  $snapshot = Get-Content $snapshotPath -Raw | ConvertFrom-Json
+  $snapshotVerdict = [string]$snapshot.verdict
+  if ($snapshotVerdict -ne "PASS") {
+    $coverage = @($snapshot.checks | Where-Object { $_.name -eq "post_run_counter_coverage" } | Select-Object -First 1)
+    $coverageDetail = ""
+    if ($coverage.Count -gt 0 -and $coverage[0].status -ne "PASS") {
+      $coverageDetail = (" post_run_counter_coverage={0}: {1}" -f $coverage[0].status, $coverage[0].detail)
+    }
+    Write-Host ("==> Baseline update blocked: snapshot verdict={0}.{1}" -f $snapshotVerdict, $coverageDetail) -ForegroundColor Yellow
+    exit 1
+  }
+
+  Write-Host "==> Update baseline from LT-001 snapshot"
+  & $updateBaseline `
+    -SnapshotPath $snapshotPath `
+    -OutputPath $BaselinePath `
+    -Source ("{0}:{1}" -f "LT-001", $TestId)
 
   if ($LASTEXITCODE -ne 0) {
-    Write-Host "==> Snapshot/report generation failed (exit=$LASTEXITCODE)" -ForegroundColor Yellow
+    Write-Host "==> Baseline update failed (exit=$LASTEXITCODE)" -ForegroundColor Yellow
     exit $LASTEXITCODE
   }
-
-  if ($AutoUpdateBaseline) {
-    $snapshotPath = Join-Path $ResultsRoot $TestId
-    $snapshotPath = Join-Path $snapshotPath "prometheus-snapshot.json"
-    Write-Host "==> Update baseline from LT-001 snapshot"
-    & $updateBaseline `
-      -SnapshotPath $snapshotPath `
-      -OutputPath $BaselinePath `
-      -Source ("{0}:{1}" -f "LT-001", $TestId)
-    if ($LASTEXITCODE -ne 0) {
-      Write-Host "==> Baseline update failed (exit=$LASTEXITCODE)" -ForegroundColor Yellow
-      exit $LASTEXITCODE
-    }
-  }
 }
 
-if ($proc.ExitCode -ne 0) {
-  exit $proc.ExitCode
-}
-
-exit $drainExitCode
+exit 0

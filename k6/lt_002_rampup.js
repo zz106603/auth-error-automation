@@ -9,6 +9,7 @@ import { Rate } from "k6/metrics";
  */
 
 const CHECK_FAIL = new Rate("check_fail_rate"); // 2xx 실패율 추적
+const RUN_ID = __ENV.TEST_ID || `LT-002-${Date.now()}`;
 
 function randomIntBetweenLocal(min, max) {
   const lo = Math.ceil(min);
@@ -166,7 +167,7 @@ export default function () {
 
   const rand = randomIntBetweenLocal(100000, 999999);
   const payload = JSON.stringify({
-    requestId: `REQ-${__VU}-${__ITER}-${rand}`,
+    requestId: `REQ-${RUN_ID}-${__VU}-${__ITER}-${rand}`,
     occurredAt: occurredAt,
     httpStatus: 401,
     exceptionClass: "org.springframework.security.authentication.BadCredentialsException",

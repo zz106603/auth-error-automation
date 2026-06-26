@@ -9,6 +9,7 @@ import { Trend, Rate } from "k6/metrics";
 
 const CLIENT_INGEST = new Trend("client_ingest_latency_ms", true); // 서버 E2E 아님
 const CHECK_FAIL = new Rate("check_fail_rate");
+const RUN_ID = __ENV.TEST_ID || `LT-001-${Date.now()}`;
 
 export const options = {
   scenarios: {
@@ -46,7 +47,7 @@ export default function () {
   // AuthErrorRecordRequest DTO 필수 필드 5개는 반드시 포함해야 함. :contentReference[oaicite:2]{index=2}
   const payload = JSON.stringify({
     // required
-    requestId: `REQ-${__VU}-${__ITER}`,
+    requestId: `REQ-${RUN_ID}-${__VU}-${__ITER}`,
     occurredAt: occurredAt, // OffsetDateTime
     httpStatus: 401,
     exceptionClass: "org.springframework.security.authentication.BadCredentialsException",
