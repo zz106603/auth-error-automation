@@ -103,15 +103,16 @@ public class OutboxMessageStoreAdapter implements OutboxMessageStore {
     }
 
     @Override
-    // backlog age(p95/p99) 조회용 (STOP 5.2)
+    // backlog age/count 조회용 (STOP 5.2)
     public OutboxAgeStats loadOutboxAgeStats(OffsetDateTime now) {
         Object[] row = repo.findOutboxAgeP95P99Ms(now);
-        if (row == null || row.length < 2) {
-            return new OutboxAgeStats(0, 0);
+        if (row == null || row.length < 3) {
+            return new OutboxAgeStats(0, 0, 0);
         }
         long p95 = toLong(row[0]);
         long p99 = toLong(row[1]);
-        return new OutboxAgeStats(p95, p99);
+        long backlogCount = toLong(row[2]);
+        return new OutboxAgeStats(p95, p99, backlogCount);
     }
 
     private long toLong(Object v) {

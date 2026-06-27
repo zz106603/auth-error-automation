@@ -16,6 +16,7 @@ public final class MetricsConfig {
     public static final String METRIC_OUTBOX_AGE_P95 = "auth_error.outbox.age.p95";
     public static final String METRIC_OUTBOX_AGE_P99 = "auth_error.outbox.age.p99";
     public static final String METRIC_OUTBOX_AGE_SLOPE = "auth_error.outbox.age.slope_ms_per_10s";
+    public static final String METRIC_OUTBOX_BACKLOG_COUNT = "auth_error.outbox.backlog.count";
     public static final String METRIC_PUBLISH_LAST_SUCCESS_EPOCH_MS = "auth_error.publish.last_success_epoch_ms";
     public static final String METRIC_RUNTIME_HIKARI_MAX_POOL_SIZE = "auth_error.runtime.hikari.max_pool_size";
     public static final String METRIC_RUNTIME_CONSUMER_CONCURRENCY = "auth_error.runtime.consumer.concurrency";

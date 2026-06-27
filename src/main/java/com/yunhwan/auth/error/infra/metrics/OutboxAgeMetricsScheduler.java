@@ -4,7 +4,6 @@ import com.yunhwan.auth.error.usecase.outbox.port.OutboxMessageStore;
 import com.yunhwan.auth.error.usecase.outbox.dto.OutboxAgeStats;
 import io.micrometer.core.instrument.Gauge;
 import io.micrometer.core.instrument.MeterRegistry;
-import io.micrometer.core.instrument.DistributionSummary;
 import jakarta.annotation.PostConstruct;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -33,10 +32,11 @@ public class OutboxAgeMetricsScheduler implements SchedulingConfigurer {
     private final TaskScheduler outboxTaskScheduler;
     private final Clock clock;
 
-    // outbox_age_p95/p99/slope 즉시 조회용
+    // outbox_age_p95/p99/slope/backlog count 즉시 조회용
     private final AtomicLong p95Ms = new AtomicLong(0);
     private final AtomicLong p99Ms = new AtomicLong(0);
     private final AtomicLong slopeMsPer10s = new AtomicLong(0);
+    private final AtomicLong backlogCount = new AtomicLong(0);
     private volatile long lastP95Ms = 0;
 
     @PostConstruct
@@ -45,6 +45,7 @@ public class OutboxAgeMetricsScheduler implements SchedulingConfigurer {
         Gauge.builder(METRIC_OUTBOX_AGE_P95, p95Ms, AtomicLong::get).register(meterRegistry);
         Gauge.builder(METRIC_OUTBOX_AGE_P99, p99Ms, AtomicLong::get).register(meterRegistry);
         Gauge.builder(METRIC_OUTBOX_AGE_SLOPE, slopeMsPer10s, AtomicLong::get).register(meterRegistry);
+        Gauge.builder(METRIC_OUTBOX_BACKLOG_COUNT, backlogCount, AtomicLong::get).register(meterRegistry);
     }
 
     @Override
@@ -64,6 +65,7 @@ public class OutboxAgeMetricsScheduler implements SchedulingConfigurer {
 
             p95Ms.set(currentP95);
             p99Ms.set(currentP99);
+            backlogCount.set(stats.backlogCount());
 
             long slope = currentP95 - lastP95Ms;
             slopeMsPer10s.set(slope);

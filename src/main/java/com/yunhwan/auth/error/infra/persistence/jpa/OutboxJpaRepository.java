@@ -189,11 +189,12 @@ public interface OutboxJpaRepository extends JpaRepository<OutboxMessage, Long> 
       coalesce(
         percentile_disc(0.99) within group (order by extract(epoch from (:now - created_at)) * 1000),
         0
-      )::bigint as p99_ms
+      )::bigint as p99_ms,
+      count(*)::bigint as backlog_count
     from outbox_message
     where status in ('PENDING', 'PROCESSING')
     """, nativeQuery = true)
-    // outbox_age_p95/p99 산출용 (집계 쿼리 1회)
+    // outbox_age_p95/p99 및 backlog count 산출용 (집계 쿼리 1회)
     Object[] findOutboxAgeP95P99Ms(@Param("now") OffsetDateTime now);
 
     @Modifying(clearAutomatically = true, flushAutomatically = true)
