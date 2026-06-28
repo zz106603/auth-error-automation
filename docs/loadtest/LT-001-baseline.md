@@ -20,10 +20,13 @@
 
 ## 2. Baseline Metrics (필수)
 
+LT-001 baseline은 필수 Prometheus series가 모두 존재할 때만 PASS로 채택한다. run-window 끝의 counter undercount를 피하기 위해 publish/consume 총량은 drain 이후 post-run counter delta도 함께 확인한다.
+
 | Metric | Value | Source | Notes |
 | --- | --- | --- | --- |
-| baseline_E2E_p95 (ms) | **548.00** | `histogram_quantile(0.95, sum by (le) (rate(auth_error_e2e_seconds_bucket[1m])))` | 소비 완료 시점 기준 |
-| baseline_E2E_p99 (ms) | **619.00** | `histogram_quantile(0.99, sum by (le) (rate(auth_error_e2e_seconds_bucket[1m])))` |  |
+| baseline_E2E_p95 (ms) | **548.00** | `histogram_quantile(0.95, sum by (le) (rate(auth_error_ingest_to_consume_seconds_bucket[1m])))` | 소비 완료 시점 기준 |
+| baseline_E2E_p99 (ms) | **619.00** | `histogram_quantile(0.99, sum by (le) (rate(auth_error_ingest_to_consume_seconds_bucket[1m])))` |  |
+| baseline_outbox_backlog_count | **0.000** | `auth_error_outbox_backlog_count` | PENDING + PROCESSING |
 | baseline_outbox_age_p95 (ms) | **0.000** | `auth_error_outbox_age_p95` | backlog 없음(0) |
 | baseline_outbox_age_p99 (ms) | **0.000** | `auth_error_outbox_age_p99` |  |
 | baseline_ingest_rate (req/s) | **4.34** | `sum(rate(http_server_requests_seconds_count{uri="/api/auth-errors"}[1m]))` | HTTP RPS 기준 |
