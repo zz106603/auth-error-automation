@@ -45,7 +45,7 @@
 | --- | --- |
 | API 수집 지연 | `http_server_requests_seconds_bucket{uri="/api/auth-errors"}` |
 | 전체 처리 지연 | `auth_error_ingest_to_consume_seconds_bucket{event_type="auth.error.recorded.v1", queue="auth.error.recorded.q", result="success"}` |
-| Outbox 적체 | `auth_error_outbox_age_p95`, `auth_error_outbox_age_p99`, `auth_error_outbox_age_slope_ms_per_10s` |
+| Outbox 적체 | `auth_error_outbox_backlog_count`, `auth_error_outbox_age_p95`, `auth_error_outbox_age_p99`, `auth_error_outbox_age_slope_ms_per_10s` |
 | 발행 속도 | `rate(auth_error_publish_total{result="success"}[1m])` |
 | 소비 속도 | `rate(auth_error_consume_total{result="success"}[1m])` |
 | 재시도 압력 | `rate(auth_error_retry_enqueue_total[1m])`, retry queue ready/unacked depth |

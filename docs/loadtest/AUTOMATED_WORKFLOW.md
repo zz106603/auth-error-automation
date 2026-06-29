@@ -2,18 +2,42 @@
 
 ## 목표
 
-k6 실행 후 수동 Grafana/Prometheus UI 조회 없이, 고정 run window(`t_start`, `t_end`) 기준으로 KPI를 자동 캡처하고 보고서를 생성한다.
+k6 부하 테스트를 일회성 TPS 측정이 아니라 비동기 파이프라인의 수렴성과 장애 징후를 반복 검증하는 흐름으로 고정한다.
+
+표준 실행 순서:
+
+```text
+clean start gate
+-> fixed k6 run window
+-> drain verification
+-> Prometheus snapshot
+-> report/verdict
+```
+
+API latency만 빠른 상태는 성공으로 보지 않는다. 최종 판정은 E2E latency, Outbox age, publish/consume imbalance, retry pressure, DLQ depth, drain 결과를 함께 본다.
 
 ## Source of Truth
 
 - 최종 보고의 기준은 `docs/loadtest/results/<test-id>/prometheus-snapshot.json`이다.
+- 사람이 읽는 요약은 `docs/loadtest/results/<test-id>/<test-id>-summary.md`이다.
 - Grafana는 진단/탐색용 보조 도구로 사용한다.
+- k6 stdout과 wrapper 상태는 `k6/results/<test-id>/`에 남긴다.
 
-## 결과 폴더 구조
+## 표준 산출물 구조
 
-각 실행은 아래 구조로 아티팩트를 만든다.
+각 실행은 아래 구조를 만든다.
 
 ```text
+k6/results/<test-id>/
+  ├─ <scenario>.stdout.log
+  ├─ <scenario>-<test-id>.log
+  ├─ wrapper-execution.log
+  ├─ wrapper-state.json
+  ├─ pre_run_gate.samples.jsonl
+  ├─ pre_run_gate.summary.json
+  ├─ post_run_drain.samples.jsonl
+  └─ post_run_drain.summary.json
+
 docs/loadtest/results/<test-id>/
   ├─ k6-artifacts.json
   ├─ run-metadata.json
@@ -22,91 +46,181 @@ docs/loadtest/results/<test-id>/
   └─ <test-id>-summary.md
 ```
 
-## 자동화 스크립트
+실패 시에는 가능한 위치에 아래 파일도 남긴다.
 
-- `k6/script/capture-prometheus-snapshot.ps1`
-  - 입력: `test-id`, `t_start/t_end`(선택), `Prometheus URL`, baseline/rules 경로
-  - 동작: Prometheus `query_range`로 KPI 수집, anomaly 탐지, JSON/TXT 출력
+```text
+k6/results/<test-id>/wrapper.failure.json
+k6/results/<test-id>/FAILED-WRAPPER.txt
+docs/loadtest/results/<test-id>/wrapper.failure.json
+docs/loadtest/results/<test-id>/FAILED-WRAPPER.txt
+```
 
-- `k6/script/generate-loadtest-report.ps1`
-  - 입력: snapshot JSON
-  - 동작: KPI 표 + PASS/FAIL/UNKNOWN 판정 + PromQL appendix markdown 생성
+## 공통 실행 Helper
 
-- `k6/script/capture-and-report-loadtest.ps1`
-  - 위 2개를 순차 실행
-- `k6/script/wait-loadtest-clean.ps1`
-  - 시나리오 실행 전 파이프라인 clean state gate 확인 (공용)
-- `k6/script/verify-loadtest-drain.ps1`
-  - 시나리오 종료 후 drain 복귀 확인 (공용)
-- `k6/script/reset-loadtest-state.ps1`
-  - DB/Rabbit 상태를 테스트 시작 전 강제 초기화 (공용)
+모든 LT runner는 `k6/script/invoke-loadtest-workflow.ps1`를 통해 실행한다.
 
-## 시나리오 실행
+이 helper가 담당하는 일:
 
-- LT-002E: `k6/script/run-lt-002-slice-knee.ps1`
-  - k6 실행 + drain 검증 + snapshot + summary 자동 생성
+- 필요 시 `reset-loadtest-state.ps1` 실행
+- `wait-loadtest-clean.ps1`로 clean start gate 확인
+- Docker 기반 k6 실행과 stdout 파일 저장
+- `verify-loadtest-drain.ps1`로 post-run drain 확인
+- `capture-and-report-loadtest.ps1`로 Prometheus snapshot과 Markdown report 생성
+- wrapper 상태와 실패 원인 artifact 기록
 
-- LT-003: `k6/script/run-lt-003-steady.ps1`
-  - k6 steady 실행 + drain 검증 + snapshot + summary 자동 생성
+개별 runner는 시나리오별 차이만 넘긴다.
 
-- LT-001: `k6/script/run-lt-001.ps1`
-  - k6 baseline 실행 + drain 검증 + snapshot + summary 자동 생성
-  - 기본값으로 `docs/loadtest/baseline/latest-baseline.json` 자동 갱신
-  - `-ResetStateBeforeRun` 옵션으로 실행 전 DB/Rabbit 강제 초기화 가능
+- LT-001: baseline script, baseline 자동 갱신
+- LT-002: ramp-up script
+- LT-002E: knee slice script, `SLICE_PROFILE`, 초기 `[SLICE_START]` marker 확인
+- LT-003: steady script, `TARGET_RPS`, `STEADY_DURATION`
 
-## 기본 Acceptance Rules
+## 실행 명령
 
-rules 파일: `k6/loadtest-acceptance-rules.json` (스크립트는 `k6/script`에서 호출)
+Baseline:
 
-- LT-002E
-  - error rate <= 0.2%
-  - E2E p95 <= baseline p95 * 3
-  - E2E p99 <= baseline p99 * 5
-  - outbox slope peak <= 1000 ms/10s
-  - publish/consume gap ratio > 5%가 60초 이상 지속되면 FAIL
-  - drain time <= 180s
+```powershell
+.\k6\script\run-lt-001.ps1
+```
 
-- LT-003
-  - error rate <= 0.2%
-  - E2E p95 <= baseline p95 * 3
-  - E2E p99 <= baseline p99 * 5
-  - outbox slope peak <= 500 ms/10s
-  - publish/consume gap ratio > 3%가 120초 이상 지속되면 FAIL
-  - drain time <= 300s
+Ramp-up:
+
+```powershell
+.\k6\script\run-lt-002.ps1
+```
+
+Knee slice:
+
+```powershell
+.\k6\script\run-lt-002-slice-knee.ps1
+.\k6\script\run-lt-002-slice-knee.ps1 -SliceProfile lower-narrow
+```
+
+Steady load:
+
+```powershell
+.\k6\script\run-lt-003-steady.ps1 -TargetRps 85 -SteadyDuration 15m
+```
+
+테스트 전 DB/RabbitMQ 상태를 강제로 비우고 시작해야 하면 공통 옵션을 사용한다.
+
+```powershell
+.\k6\script\run-lt-001.ps1 -ResetStateBeforeRun
+.\k6\script\run-lt-002-slice-knee.ps1 -ResetStateBeforeRun
+```
+
+## Observability Preflight
+
+LT 실행 전 Prometheus가 앱과 RabbitMQ를 모두 scrape하고 있는지 먼저 확인한다. 이 단계가 실패하면 k6를 시작하지 않는다.
+
+Prometheus UI 또는 API에서 아래 쿼리가 정상이어야 한다.
+
+```promql
+up{job="spring-boot"} == 1
+up{job="rabbitmq"} == 1
+```
+
+핵심 시계열도 비어 있으면 안 된다.
+
+```promql
+auth_error_outbox_backlog_count
+auth_error_outbox_age_p95
+rabbitmq_detailed_queue_messages_ready{queue!=""}
+hikaricp_connections_active
+```
+
+`spring-boot` scrape가 실패하면 애플리케이션이 local profile의 management port `18081`로 떠 있는지 확인한다. `rabbitmq` scrape가 실패하면 RabbitMQ Prometheus endpoint `:15692/metrics/detailed`와 observability compose 상태를 먼저 확인한다.
+
+## Clean Start Gate
+
+테스트 시작 전 `wait-loadtest-clean.ps1`가 아래 조건을 확인한다.
+
+- RabbitMQ ready depth가 허용 범위 이하
+- RabbitMQ unacked depth가 허용 범위 이하
+- retry queue depth가 허용 범위 이하
+- DLQ depth가 허용 범위 이하
+- Outbox backlog count가 허용 범위 이하
+- Outbox age p95/p99가 허용 범위 이하
+- Hikari pending connection이 허용 범위 이하
+
+clean state가 지정 시간 동안 유지되지 않으면 k6를 시작하지 않는다.
+
+실패 분류:
+
+- `clean_start_failed`
+
+## Fixed Run Window
+
+k6 시작 시각과 종료 시각을 wrapper가 UTC로 기록한다.
+
+이 `t_start`, `t_end`는 Prometheus `query_range`의 기준 window가 된다. 수동 Grafana 조회값은 최종 보고 수치로 사용하지 않는다.
+
+## Drain Verification
+
+k6 실행이 끝난 뒤 `verify-loadtest-drain.ps1`가 파이프라인이 다시 비는지 확인한다.
+
+drain 실패는 테스트 실패다. API 요청이 모두 2xx였더라도 backlog가 배출되지 않으면 성공으로 처리하지 않는다.
+
+실패 분류:
+
+- `drain_failed`
+
+## Snapshot / Report / Verdict
+
+`capture-and-report-loadtest.ps1`는 두 단계를 실행한다.
+
+1. `capture-prometheus-snapshot.ps1`
+   - run window 기준 Prometheus 지표 수집
+   - drain 완료 시점까지 포함한 post-run counter delta 수집
+   - baseline-relative checks 계산
+   - anomaly 기록
+   - `prometheus-snapshot.json` 생성
+
+2. `generate-loadtest-report.ps1`
+   - KPI 요약
+   - acceptance checks
+   - `PASS`, `FAIL`, `UNKNOWN` verdict
+   - PromQL appendix 생성
+
+판정 기준은 `k6/loadtest-acceptance-rules.json`을 따른다.
+
+## 실패 원인 분류
+
+| 분류 | 의미 | 대표 산출물 |
+| --- | --- | --- |
+| `reset_state_failed` | 실행 전 강제 초기화 실패 | `wrapper.failure.json` |
+| `clean_start_failed` | clean start gate 실패. k6 미시작 | `pre_run_gate.summary.json`, `FAILED-WRAPPER.txt` |
+| `k6_failed` | k6 프로세스 실패 또는 marker 확인 실패 | k6 stdout log, `wrapper.failure.json` |
+| `drain_failed` | 실행 후 backlog가 시간 안에 배출되지 않음 | `post_run_drain.summary.json`, `CONTAMINATED.txt` |
+| `snapshot_or_report_failed` | Prometheus snapshot 또는 report 생성 실패 | `capture-and-report.failure.json` |
+
+snapshot 내부의 `UNKNOWN`은 테스트 성공이 아니다. 주로 baseline 부재, scrape 누락, 샘플 부족, counter reset, 필수 artifact 누락처럼 판정에 필요한 근거가 부족한 경우다.
+
+필수 snapshot query가 no-data이면 LT-001 baseline은 PASS로 채택하지 않는다. 특히 E2E latency, overflow signal, publish/consume, Outbox backlog/age, RabbitMQ depth, Hikari 지표는 모두 샘플이 있어야 한다.
+
+k6 run window 끝 경계에서는 마지막 Prometheus scrape가 늦게 들어와 counter가 작게 보일 수 있다. 총량 검증은 run-window counter의 마지막 값만 보지 않고 drain 완료 이후 `post-run counter delta`를 함께 확인한다.
 
 ## Baseline 파일
 
-기본 baseline 파일: `docs/loadtest/baseline/latest-baseline.json`
+기본 baseline 파일:
 
-- LT-001 실행 결과가 갱신되면 이 파일도 함께 갱신해야 baseline-relative 판정이 정확해진다.
-- baseline 파일이 없으면 baseline 관련 항목은 `UNKNOWN`으로 평가된다.
+```text
+docs/loadtest/baseline/latest-baseline.json
+```
 
-## Baseline 캡처/요약 스크립트 (선택/진단용)
+LT-001이 성공하면 기본값으로 baseline을 갱신한다. baseline 파일이 없거나 핵심 값이 비어 있으면 baseline-relative check는 `UNKNOWN`으로 기록된다.
 
-- baseline 캡처:
-  - `.\k6\script\capture-baseline.ps1`
-  - 기본 Actuator URL: `http://localhost:18081` (`/actuator/prometheus`)
-  - 기본 출력 경로: `docs/loadtest/baseline-captures`
-- baseline 요약:
-  - `.\k6\script\summarize-baseline.ps1`
-  - 기본 입력 경로: `docs/loadtest/baseline-captures`
+Baseline 자동 갱신은 snapshot/report verdict가 `PASS`일 때만 수행한다. `post_run_counter_coverage`가 `FAIL`이면 HTTP 요청은 성공했더라도 Outbox publish/consume/timer 증가량이 부족한 실행이므로 baseline 갱신 대상이 아니다. `LT-001-2026-06-25_152427`은 LT-001 `requestId` 재사용으로 dedup 처리된 invalid run이므로 baseline으로 사용하지 않는다.
 
-두 스크립트의 기본 경로는 모두 **repo root 기준**으로 해석된다.
-`capture-manifest.txt`가 없고 `prom-*.txt` 스냅샷이 2개 이상 존재하면,
-요약 스크립트가 manifest를 자동 복구한다.
-일반 워크플로우에서는 `run-lt-001.ps1`만으로 baseline JSON이 자동 갱신되므로
-별도 capture/summarize 실행은 필수 아님.
+## 장애 주입 시나리오 범위
 
-## Clean Start (권장)
+#51의 1차 구현은 표준 실행 흐름을 고정하는 것이다. 장애 주입 시나리오는 이 workflow 위에 얹는다.
 
-- 테스트 시작 전 강제 초기화:
-  - `.\k6\script\reset-loadtest-state.ps1`
-- 실행 스크립트에서 즉시 초기화 포함:
-  - `.\k6\script\run-lt-001.ps1 -ResetStateBeforeRun`
-  - `.\k6\script\run-lt-002-slice-knee.ps1 -ResetStateBeforeRun`
-  - 필요시 `-ResetPurgeAllQueues`로 `amq.*` 포함 전체 purge
+후속으로 붙일 시나리오:
 
-## 참고
+- consumer slow
+- RabbitMQ unavailable
+- retry/DLQ pressure
+- poison message burst
 
-- Prometheus scrape 간격이 너무 크거나 샘플 수가 부족하면 anomaly로 기록한다.
-- counter reset 탐지 시 anomaly로 기록한다.
+이 시나리오들도 동일하게 clean start gate, fixed run window, drain verification, Prometheus snapshot, report/verdict를 따라야 한다.
