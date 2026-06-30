@@ -288,6 +288,26 @@
         "type": "prometheus",
         "uid": "prometheus"
       },
+      "fieldConfig": {"defaults": {"unit": "short"}, "overrides": []},
+      "gridPos": {"h": 6, "w": 12, "x": 12, "y": 30},
+      "id": 20,
+      "options": {"legend": {"showLegend": true}},
+      "targets": [
+        {
+          "expr": "auth_error_outbox_backlog_count or vector(0)",
+          "legendFormat": "outbox backlog count",
+          "refId": "A"
+        }
+      ],
+      "description": "PENDING + PROCESSING outbox_message count",
+      "title": "Outbox Backlog Count",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
       "fieldConfig": {"defaults": {"unit": "ms"}, "overrides": []},
       "gridPos": {"h": 6, "w": 12, "x": 0, "y": 30},
       "id": 12,
