@@ -199,6 +199,8 @@ API는 빠르게 응답할 수 있다.
 
 # 실행 자동화 (현재 권장)
 
+#51은 standard load-test workflow v1 완료로 정리한다. 남은 LT-002/LT-003 실행 증거, 장애 주입, 결과 해석 가이드는 `docs/loadtest/ROADMAP.md`에서 후속 작업으로 추적한다.
+
 - LT-002E: `./k6/script/run-lt-002-slice-knee.ps1`
 - LT-003: `./k6/script/run-lt-003-steady.ps1`
 

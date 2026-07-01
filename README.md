@@ -173,9 +173,13 @@ com.yunhwan.auth.error
 - [x]  Idempotency 기반 중복 방지
 - [x]  DB 기반 통합 테스트
 - [x]  stack_hash 기반 Cluster upsert + link
+- [x]  #51 standard load-test workflow v1 완료
 - [ ]  RabbitMQ 실제 운영 설정(성능/튜닝) 고도화
 - [ ]  ELK(또는 대체) 대시보드/지표 완성
-- [ ]  부하 테스트(ingest/publish/consumer failure rate/dlq) 및 병목 분석
+- [ ]  LT-002/LT-003 실행 증거와 결과 해석 문서화
+- [ ]  장애 주입 부하 테스트(consumer slow, RabbitMQ unavailable, retry/DLQ pressure, poison message burst)
+
+Load test 세부 로드맵은 [docs/loadtest/ROADMAP.md](docs/loadtest/ROADMAP.md)를 따른다.
 
 ---
 

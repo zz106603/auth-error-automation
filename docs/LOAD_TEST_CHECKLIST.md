@@ -281,6 +281,8 @@ STOP 조건:
 - consumer fail
 - retry/dlq 정책 검증
 
+세부 장애 주입 항목은 `docs/loadtest/ROADMAP.md`의 후속 이슈로 추적한다. 현재 분리된 항목은 consumer slow, RabbitMQ unavailable, retry/DLQ pressure, poison message burst이다.
+
 ---
 
 # 8. 성공 정의
