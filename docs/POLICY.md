@@ -241,6 +241,9 @@ DEAD
     - 원본 메시지 ACK는 retry publish request가 durable하게 저장된 이후에만 수행한다.
     - retry publish request poller는 RabbitMQ publisher confirm/return을 확인한 뒤 PUBLISHED로 마감한다.
     - retry publish 실패 시 request는 유실하지 않고 재발행 대상으로 남긴다.
+    - 단일 retry publish 실패는 원본 `processed_message`를 DEAD로 만들지 않는다.
+    - RetryPublishRequest 자체가 terminal `DEAD`가 된 경우에만 원본 `processed_message`를 `DEAD`로 전파한다.
+    - 이때 `processed_message.last_error`에는 `RETRY_PUBLISH_REQUEST_DEAD` reason을 남긴다.
 - DLQ:
     - Non-retryable 예외
     - maxRetries 초과

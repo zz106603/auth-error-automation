@@ -91,6 +91,7 @@ histogram_quantile(0.95, sum by (le) (rate(auth_error_ingest_to_consume_seconds_
 - ready가 높고 unacked가 낮으면 Consumer가 충분히 가져가지 못하는 상태다.
 - unacked가 높고 줄지 않으면 Consumer가 가져간 뒤 handler, DB, 외부 처리에서 막힌 상태다.
 - retry depth가 함께 증가하면 단순 처리량 부족보다 반복 실패를 먼저 본다.
+- `processed_message.status = 'DEAD'`이고 `last_error`가 `RETRY_PUBLISH_REQUEST_DEAD`로 시작하면 handler 재시도 자체가 실패한 것이 아니라 retry 메시지를 RabbitMQ retry exchange로 재발행하는 원장이 terminal DEAD가 된 상태다. 이 경우 `retry_publish_request`의 `last_publish_error`, `publish_retry_count`, `status`를 함께 확인한다.
 
 ### 즉시 조치
 
@@ -234,6 +235,11 @@ Outbox 메시지에서 Consumer 처리 상태와 DLQ 원장을 찾는다.
 select outbox_id, status, retry_count, next_retry_at, last_error
 from processed_message
 where outbox_id = :outboxId;
+
+select source_outbox_id, status, retry_count, publish_retry_count, next_publish_at, last_publish_error
+from retry_publish_request
+where source_outbox_id = :outboxId
+order by created_at desc;
 
 select outbox_id, event_type, reason_code, payload_hash, payload_size_bytes, delivery_count, replay_status
 from dead_letter_message
