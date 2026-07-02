@@ -9,6 +9,7 @@
 | Issue | 상태 | 완료 기준 | 근거 |
 | --- | --- | --- | --- |
 | #51 - standard load-test workflow v1 | 완료 | clean start gate, fixed run window, drain verification, Prometheus snapshot, report/verdict 흐름을 표준화한다. | `docs/loadtest/AUTOMATED_WORKFLOW.md`, `k6/script/invoke-loadtest-workflow.ps1`, `k6/script/wait-loadtest-clean.ps1`, `k6/script/verify-loadtest-drain.ps1`, `k6/script/capture-and-report-loadtest.ps1` |
+| #59 - LT result interpretation guide | 완료 | PASS/FAIL/UNKNOWN, wrapper 실패, scrape 누락, counter reset, baseline 부재, drain/DLQ 해석 기준을 문서화한다. | `docs/loadtest/RESULT_INTERPRETATION_GUIDE.md` |
 
 ## 후속 이슈 후보
 
@@ -19,7 +20,6 @@
 | RabbitMQ unavailable failure injection | RabbitMQ 발행 경로 장애에서 메시지가 Outbox backlog로 남고 복구 후 drain되는지 확인한다. | publish failure/silence, Outbox backlog age, 복구 후 drain 결과가 산출물에 남는다. |
 | retry/DLQ pressure scenario | retry queue 증가와 DLQ 전환 압력을 표준 workflow로 관측한다. | retry enqueue rate, retry depth, DLQ rate/depth, reason code가 보고서에 반영된다. |
 | poison message burst scenario | malformed 또는 계약 위반 메시지가 즉시 DLQ로 격리되는지 검증한다. | poison burst 입력, DLQ reason taxonomy, payload hash/delivery count 기준 중복 처리 결과가 기록된다. |
-| LT result interpretation guide | LT 결과를 운영 관점에서 해석하는 기준을 정리한다. | PASS/FAIL/UNKNOWN, clean start 실패, drain 실패, scrape 누락, counter reset, baseline 부재의 해석 절차가 문서화된다. |
 | payload hash hardening | Outbox payload drift 탐지의 운영 보장 수준을 명확히 한다. | 기존 row backfill 여부, `payload_hash` NOT NULL 전환 여부, 수동 insert 차단 정책이 결정되고 테스트/문서에 반영된다. |
 | DLQ replay operations | DLQ 원장 이후의 운영 처리를 정의한다. | replay API/worker를 만들지 여부, operator approval, replay idempotency, retention 기준이 문서화된다. |
 
