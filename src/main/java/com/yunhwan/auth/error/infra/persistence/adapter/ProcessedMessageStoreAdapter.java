@@ -84,6 +84,11 @@ public class ProcessedMessageStoreAdapter implements ProcessedMessageStore {
     }
 
     @Override
+    public int markDeadFromRetryPublishRequest(long outboxId, OffsetDateTime now, String lastError) {
+        return repo.markDeadFromRetryPublishRequest(outboxId, now, lastError);
+    }
+
+    @Override
     public Optional<ProcessedStatus> findStatusByOutboxId(long outboxId) {
         return Optional.ofNullable(repo.findStatusByOutboxId(outboxId));
     }

@@ -114,6 +114,23 @@ public interface ProcessedMessageJpaRepository extends JpaRepository<ProcessedMe
                  @Param("now") OffsetDateTime now,
                  @Param("lastError") String lastError);
 
+    @Transactional
+    @Modifying
+    @Query(value = """
+    update processed_message
+       set status = 'DEAD',
+           lease_until = null,
+           next_retry_at = null,
+           last_error = :lastError,
+           dead_at = :now,
+           updated_at = :now
+     where outbox_id = :outboxId
+       and status = 'RETRY_WAIT'
+    """, nativeQuery = true)
+    int markDeadFromRetryPublishRequest(@Param("outboxId") long outboxId,
+                                        @Param("now") OffsetDateTime now,
+                                        @Param("lastError") String lastError);
+
     @Query(value = """
     select status
       from processed_message

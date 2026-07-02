@@ -2,6 +2,7 @@ package com.yunhwan.auth.error.usecase.consumer;
 
 import com.yunhwan.auth.error.common.exception.NonRetryablePublishException;
 import com.yunhwan.auth.error.domain.consumer.RetryPublishRequest;
+import com.yunhwan.auth.error.usecase.consumer.port.ProcessedMessageStore;
 import com.yunhwan.auth.error.usecase.consumer.port.RetryPublishRequestPublisher;
 import com.yunhwan.auth.error.usecase.consumer.port.RetryPublishRequestStore;
 import com.yunhwan.auth.error.usecase.consumer.policy.RetryPolicy;
@@ -20,6 +21,7 @@ public class RetryPublishRequestProcessor {
 
     private final RetryPublishRequestPublisher publisher;
     private final RetryPublishRequestStore store;
+    private final ProcessedMessageStore processedMessageStore;
     private final RetryPolicy retryPolicy;
     private final Clock clock;
 
@@ -46,13 +48,30 @@ public class RetryPublishRequestProcessor {
         if (e instanceof NonRetryablePublishException || retryPolicy.shouldDead(nextPublishRetry)) {
             log.error("[RetryPublishRequest] DEAD. id={}, outboxId={}, err={}",
                     request.getId(), request.getSourceOutboxId(), err, e);
-            return store.markDead(request.getId(), owner, nextPublishRetry, err, now);
+            int rows = store.markDead(request.getId(), owner, nextPublishRetry, err, now);
+            if (rows > 0) {
+                processedMessageStore.markDeadFromRetryPublishRequest(
+                        request.getSourceOutboxId(),
+                        now,
+                        retryPublishRequestDeadReason(err)
+                );
+            }
+            return rows;
         }
 
         OffsetDateTime nextPublishAt = retryPolicy.nextRetryAt(now, nextPublishRetry);
         log.warn("[RetryPublishRequest] publish failed -> retry. id={}, outboxId={}, nextPublishRetry={}, nextPublishAt={}, err={}",
                 request.getId(), request.getSourceOutboxId(), nextPublishRetry, nextPublishAt, err);
         return store.markForRetry(request.getId(), owner, nextPublishRetry, nextPublishAt, err, now);
+    }
+
+    private String retryPublishRequestDeadReason(String err) {
+        String reason = "RETRY_PUBLISH_REQUEST_DEAD";
+        if (err == null || err.isBlank()) {
+            return reason;
+        }
+        String value = reason + ": " + err;
+        return value.length() <= 500 ? value : value.substring(0, 500);
     }
 
     private String compactError(Exception e) {

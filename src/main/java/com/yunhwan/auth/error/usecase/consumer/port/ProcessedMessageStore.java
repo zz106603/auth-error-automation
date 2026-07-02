@@ -41,5 +41,7 @@ public interface ProcessedMessageStore {
 
     int markDead(long outboxId, OffsetDateTime now, String lastError);
 
+    int markDeadFromRetryPublishRequest(long outboxId, OffsetDateTime now, String lastError);
+
     Optional<ProcessedStatus> findStatusByOutboxId(long outboxId);
 }
