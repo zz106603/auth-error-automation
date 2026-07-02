@@ -1,6 +1,7 @@
 package com.yunhwan.auth.error.consumer;
 
 import com.yunhwan.auth.error.common.exception.RetryablePublishException;
+import com.yunhwan.auth.error.domain.consumer.ProcessedStatus;
 import com.yunhwan.auth.error.domain.consumer.RetryPublishStatus;
 import com.yunhwan.auth.error.infra.messaging.rabbit.RabbitTopologyConfig;
 import com.yunhwan.auth.error.testsupport.base.AbstractIntegrationTest;
@@ -42,6 +43,7 @@ class RetryPublishRequestProcessorFailureTest extends AbstractIntegrationTest {
     @BeforeEach
     void setUp() {
         jdbcTemplate.update("delete from retry_publish_request");
+        jdbcTemplate.update("delete from processed_message");
     }
 
     @Test
@@ -58,6 +60,10 @@ class RetryPublishRequestProcessorFailureTest extends AbstractIntegrationTest {
                 "retryable",
                 now
         );
+        jdbcTemplate.update("""
+                insert into processed_message (outbox_id, status, retry_count, next_retry_at, updated_at)
+                values (?, 'RETRY_WAIT', 1, ?, ?)
+                """, 2002L, now.plusSeconds(1), now);
 
         doThrow(new RetryablePublishException("confirm timeout", null))
                 .when(publisher).publish(any());
@@ -72,5 +78,53 @@ class RetryPublishRequestProcessorFailureTest extends AbstractIntegrationTest {
         assertThat(reloaded.getPublishRetryCount()).isEqualTo(1);
         assertThat(reloaded.getLastPublishError()).contains("confirm timeout");
         assertThat(reloaded.getPublishedAt()).isNull();
+
+        String processedStatus = jdbcTemplate.queryForObject(
+                "select status from processed_message where outbox_id = ?",
+                String.class,
+                2002L
+        );
+        assertThat(processedStatus).isEqualTo(ProcessedStatus.RETRY_WAIT.name());
+    }
+
+    @Test
+    @DisplayName("retry publish request가 terminal DEAD가 될 때만 원본 processed_message를 DEAD로 전파한다")
+    void terminal_dead_propagates_to_processed_message() throws Exception {
+        OffsetDateTime now = OffsetDateTime.now(clock);
+        var request = store.enqueue(
+                3003L,
+                RabbitTopologyConfig.RK_RECORDED,
+                "AUTH_ERROR",
+                "{\"authErrorId\":3}",
+                1,
+                now.plusSeconds(1),
+                "retryable",
+                now
+        );
+        jdbcTemplate.update("update retry_publish_request set publish_retry_count = 1 where id = ?", request.getId());
+        jdbcTemplate.update("""
+                insert into processed_message (outbox_id, status, retry_count, next_retry_at, updated_at)
+                values (?, 'RETRY_WAIT', 1, ?, ?)
+                """, 3003L, now.plusSeconds(1), now);
+
+        doThrow(new RetryablePublishException("confirm timeout", null))
+                .when(publisher).publish(any());
+
+        var claim = poller.pollOnce();
+        assertThat(claim.claimed()).hasSize(1);
+
+        processor.process(claim.owner(), claim.claimed());
+
+        var reloaded = store.findById(request.getId()).orElseThrow();
+        assertThat(reloaded.getStatus()).isEqualTo(RetryPublishStatus.DEAD);
+        assertThat(reloaded.getPublishRetryCount()).isEqualTo(2);
+
+        var processed = jdbcTemplate.queryForMap(
+                "select status, last_error, dead_at from processed_message where outbox_id = ?",
+                3003L
+        );
+        assertThat(processed.get("status")).isEqualTo(ProcessedStatus.DEAD.name());
+        assertThat((String) processed.get("last_error")).contains("RETRY_PUBLISH_REQUEST_DEAD");
+        assertThat(processed.get("dead_at")).isNotNull();
     }
 }
