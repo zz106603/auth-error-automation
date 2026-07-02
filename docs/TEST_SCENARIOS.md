@@ -8,6 +8,8 @@
 - 구현 방법, 테스트 프레임워크, 코드 구조는 다루지 않는다.
 - 각 시나리오는 **정책을 깨뜨릴 수 있는 상황**을 기준으로 작성된다.
 - 본 문서는 이후 통합 테스트/부하 테스트의 기준점으로 사용된다.
+- 본 문서는 "테스트로 보장해야 할 정책"을 선언한다. 모든 시나리오가 현재 자동화되어 있다는 의미는 아니다.
+- 현재 구현/테스트 상태의 기준선은 `docs/TESTING.md`와 실제 test class를 따른다.
 
 ---
 
@@ -190,6 +192,7 @@
 - 관측 포인트:
     - outbox 상태 전이
     - retry_count / DEAD 여부
+    - confirm timeout, broker NACK, returned message가 각각 retryable/non-retryable로 분류되는지
 
 ---
 
@@ -297,5 +300,72 @@
 - 관측 포인트:
     - “terminal → skip” 로그
     - 추가 상태 전이/부작용 여부
+
+---
+
+## TS-14 Retry Publish Request 원자성: retry 의도 저장 후 ACK
+
+### 정책 근거
+- POLICY.md §7 Retry & DLQ 정책
+
+### Given
+- Consumer handler에서 retryable failure가 발생한다.
+
+### When
+- retry publish request 저장 전/후, RabbitMQ 원본 메시지 ACK 전/후에 장애가 발생한다고 가정한다.
+
+### Then
+- retry publish request가 durable하게 저장되기 전에는 원본 메시지를 ACK하면 안 된다.
+- retry publish request가 저장된 뒤에는 별도 poller가 retry exchange 발행을 책임져야 한다.
+- retry publish request 발행 실패는 원본 `processed_message`를 즉시 DEAD로 만들지 않아야 한다.
+- retry publish request 자체가 terminal DEAD가 된 경우에만 원본 `processed_message` DEAD 전파가 허용된다.
+
+### 관측 포인트
+- `retry_publish_request` row 상태
+- 원본 `processed_message.status`, `last_error`
+- RabbitMQ retry queue depth
+
+---
+
+## TS-15 DLQ 원장: 저장 성공 후 ACK
+
+### 정책 근거
+- POLICY.md §7 Retry & DLQ 정책
+
+### Given
+- 메시지가 RabbitMQ DLQ에 도착한다.
+
+### When
+- DLQ Consumer가 메시지를 수신한다.
+
+### Then
+- `dead_letter_message` upsert가 성공한 뒤에만 ACK해야 한다.
+- 동일 메시지 반복 delivery는 새 row가 아니라 `delivery_count`, `last_seen_at` 갱신으로 기록되어야 한다.
+- payload 원문은 일반 로그에 남기지 않고 payload hash/size 중심으로 추적해야 한다.
+
+### 관측 포인트
+- `dead_letter_message.dedupe_key`
+- `payload_hash`, `payload_size_bytes`
+- `delivery_count`, `reason_code`, `replay_status`
+
+---
+
+## TS-16 Payload Hash Drift 탐지
+
+### 정책 근거
+- POLICY.md §4 Invariants / Outbox 멱등성
+
+### Given
+- 동일한 idempotencyKey로 다른 payload가 enqueue된다.
+
+### When
+- Outbox upsert가 실행된다.
+
+### Then
+- 기존 row를 조용히 재사용하면 안 된다.
+- payload hash 불일치가 감지되어야 한다.
+
+### 남은 리스크
+- `outbox_message.payload_hash`는 현재 nullable이므로 과거 row나 수동 insert row는 별도 backfill/제약 강화 전까지 완전한 DB 레벨 보장이 아니다.
 
 ---

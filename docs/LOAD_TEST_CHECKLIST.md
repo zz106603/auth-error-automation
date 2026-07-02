@@ -12,13 +12,15 @@ auth-error-automation — Single-Node Local, Production-Grade Strategy
 - ✅ 조용한 파이프라인 붕괴(silent collapse) 탐지
 - ✅ Retry / DLQ 정책 검증
 - ✅ Backpressure 감지 로직 검증
-- ✅ Outbox 신뢰성 보장 검증
+- ✅ Outbox 신뢰성 정책 검증
 
 API latency만 빠른 상태는 성공이 아니다.
 
 성공 기준은:
 
 > E2E latency + Backlog Age + Stage Throughput 균형이 유지되는 것
+
+현재 문서의 범위는 부하 테스트 판정 기준과 실행 체크리스트다. #51에서 표준 workflow v1은 완료했지만, LT-002/LT-003 실행 증거와 LT-004 장애 주입 결과는 아직 `docs/loadtest/ROADMAP.md`의 후속 항목이다.
 
 ---
 
@@ -282,6 +284,8 @@ STOP 조건:
 - retry/dlq 정책 검증
 
 세부 장애 주입 항목은 `docs/loadtest/ROADMAP.md`의 후속 이슈로 추적한다. 현재 분리된 항목은 consumer slow, RabbitMQ unavailable, retry/DLQ pressure, poison message burst이다.
+
+Failure Injection은 메시지 유실, 중복, 순서, drain 가능성을 먼저 검토한다. 특히 RabbitMQ unavailable과 retry/DLQ pressure는 API 성공률이 아니라 Outbox age, retry publish request 상태, queue depth, DLQ reason code로 판정한다.
 
 ---
 

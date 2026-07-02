@@ -3,6 +3,30 @@
 > 본 문서는 auth-error-automation 시스템의 **단일 정책 기준(Single Source of Truth)** 이다.  
 > 이 정책은 사전 설계 문서가 아닌, **현재 코드가 강제하는 규칙을 명시적으로 선언**한 것이다.  
 > 이후의 설계 변경·리팩토링·테스트는 반드시 본 문서를 기준으로 판단한다.
+>
+> 단, 본 문서는 "현재 정책과 구현이 강제하는 범위"를 정의한다. 강한 exactly-once, 자동 DLQ replay, 운영환경 HA, 실부하 SLO 달성은 아직 보장 범위가 아니다.
+
+---
+
+## 0. 현재 보장 범위와 Known Risks
+
+### 현재 보장 범위
+
+- AuthError 생성과 recorded Outbox enqueue는 동일 DB 트랜잭션에서 수행된다.
+- Outbox publish는 publisher confirm/return 결과를 확인하고, 실패 시 retry 또는 DEAD 상태로 전이한다.
+- Consumer는 at-least-once delivery를 전제로 `processed_message` 원장과 lease claim으로 중복 처리를 제어한다.
+- Consumer retry는 RabbitMQ에 직접 publish하지 않고 `retry_publish_request` 원장에 먼저 기록한다.
+- DLQ Consumer는 `dead_letter_message` 원장 upsert 이후에만 ACK한다.
+- payload 원문은 일반 로그에 남기지 않고 payload hash/size 중심으로 관측한다.
+
+### Known Risks
+
+- DB 트랜잭션과 RabbitMQ publish 사이에 분산 트랜잭션은 없다. Outbox/retry 원장이 복구 지점을 제공하지만, RabbitMQ unavailable/confirm timeout/returned message 장애 주입 증거가 더 필요하다.
+- 강한 exactly-once는 보장하지 않는다. 현재 목표는 at-least-once + idempotent side effects다.
+- DLQ replay API/worker는 없다. `replay_status`는 운영 판단 상태이며 자동 재처리를 의미하지 않는다.
+- `outbox_message.payload_hash`는 payload drift 탐지용이지만 현재 DB 제약상 nullable이다. 과거 row 또는 수동 insert에는 hash가 없을 수 있다.
+- DLQ 원장은 payload 원문을 DB에 보관한다. 운영 환경에서는 retention, masking, 접근 통제 정책이 추가로 필요하다.
+- single-node local 중심 검증이며 RabbitMQ/PostgreSQL HA, multi-instance ordering, network partition은 아직 별도 검증 대상이다.
 
 ---
 
@@ -265,5 +289,8 @@ DEAD
 - exactly-once 강보장 여부 (D2)
 - terminal 이후 analysis/cluster 허용 여부 (D3)
 - reaper takeover 조건 강화 여부 (D7)
+- DLQ replay API/worker 제공 여부
+- `outbox_message.payload_hash`의 backfill 및 NOT NULL 전환 여부
+- RabbitMQ publish confirm timeout 이후 중복 publish 가능성을 어느 수준까지 운영 절차로 허용할지
 
 본 시스템은 현재 **운영 자동화·관측 중심** 정책을 따른다.

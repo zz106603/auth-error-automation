@@ -16,10 +16,12 @@
 | --- | --- | --- |
 | LT-002/LT-003 execution evidence | ramp-up과 steady load의 실제 실행 증거를 남긴다. | 각 실행에 대해 `docs/loadtest/results/<test-id>/prometheus-snapshot.json`, `prometheus-snapshot.txt`, `<test-id>-summary.md`가 생성되고 PASS/FAIL/UNKNOWN 사유가 기록된다. |
 | consumer slow failure injection | Consumer 처리 지연 시 publish/consume imbalance, RabbitMQ ready/unacked, E2E latency가 관측되는지 확인한다. | 지연 주입 방법, 실행 산출물, drain 결과, 병목 판정이 문서화된다. |
-| RabbitMQ unavailable failure injection | RabbitMQ 발행 경로 장애에서 Outbox 유실 없이 backlog가 남고 복구 후 drain되는지 확인한다. | publish failure/silence, Outbox backlog age, 복구 후 drain 결과가 산출물에 남는다. |
+| RabbitMQ unavailable failure injection | RabbitMQ 발행 경로 장애에서 메시지가 Outbox backlog로 남고 복구 후 drain되는지 확인한다. | publish failure/silence, Outbox backlog age, 복구 후 drain 결과가 산출물에 남는다. |
 | retry/DLQ pressure scenario | retry queue 증가와 DLQ 전환 압력을 표준 workflow로 관측한다. | retry enqueue rate, retry depth, DLQ rate/depth, reason code가 보고서에 반영된다. |
 | poison message burst scenario | malformed 또는 계약 위반 메시지가 즉시 DLQ로 격리되는지 검증한다. | poison burst 입력, DLQ reason taxonomy, payload hash/delivery count 기준 중복 처리 결과가 기록된다. |
 | LT result interpretation guide | LT 결과를 운영 관점에서 해석하는 기준을 정리한다. | PASS/FAIL/UNKNOWN, clean start 실패, drain 실패, scrape 누락, counter reset, baseline 부재의 해석 절차가 문서화된다. |
+| payload hash hardening | Outbox payload drift 탐지의 운영 보장 수준을 명확히 한다. | 기존 row backfill 여부, `payload_hash` NOT NULL 전환 여부, 수동 insert 차단 정책이 결정되고 테스트/문서에 반영된다. |
+| DLQ replay operations | DLQ 원장 이후의 운영 처리를 정의한다. | replay API/worker를 만들지 여부, operator approval, replay idempotency, retention 기준이 문서화된다. |
 
 ## 추적 원칙
 

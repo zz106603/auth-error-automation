@@ -20,6 +20,12 @@ API → DB 저장 → Outbox → MQ → Consumer → Retry → DLQ
 2. 밀릴 때 조용히 붕괴하지 않는가?
 3. Retry/DLQ가 설계대로 동작하는가?
 
+현재 상태:
+
+- 표준 실행 workflow v1은 #51에서 완료했다.
+- LT-002/LT-003의 충분한 실행 증거와 LT-004 장애 주입 결과는 아직 후속 작업이다.
+- 따라서 이 문서는 "판정 방식과 실행 방법"을 정의하며, 모든 시나리오가 이미 운영적으로 검증됐다는 의미는 아니다.
+
 ---
 
 # 1. 가장 중요한 개념 3가지
@@ -167,6 +173,8 @@ API가 빠른 건 성공이 아니다.
 - Backlog age 상승 없음
 - Stage mismatch 없음
 - Retry/DLQ 정책 정상 동작
+
+`UNKNOWN`은 성공이 아니다. baseline 부재, scrape 누락, drain 실패, counter reset처럼 판단 근거가 부족하면 실행 산출물은 남기되 PASS로 해석하지 않는다.
 
 ---
 
