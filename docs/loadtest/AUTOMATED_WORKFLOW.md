@@ -73,7 +73,8 @@ docs/loadtest/results/<test-id>/FAILED-WRAPPER.txt
 개별 runner는 시나리오별 차이만 넘긴다.
 
 - LT-001: baseline script, baseline 자동 갱신
-- LT-002: ramp-up script
+- LT-002: full ramp-up script, `[STAGE_START]` 기반 hold window 판정
+- LT-002 compact: full 실행 전후 빠른 재탐색/sanity check용 ramp-up. 공식 knee 결론은 full ramp-up 또는 LT-002E 산출물로 확정한다.
 - LT-002E: knee slice script, `SLICE_PROFILE`, 초기 `[SLICE_START]` marker 확인
 - LT-003: steady script, `TARGET_RPS`, `STEADY_DURATION`
 
@@ -91,12 +92,20 @@ Ramp-up:
 .\k6\script\run-lt-002.ps1
 ```
 
+Compact ramp-up:
+
+```powershell
+.\k6\script\run-lt-002-compact.ps1
+```
+
 Knee slice:
 
 ```powershell
 .\k6\script\run-lt-002-slice-knee.ps1
 .\k6\script\run-lt-002-slice-knee.ps1 -SliceProfile lower-narrow
 ```
+
+기본 LT-002E slice profile은 compact ramp-up 결과를 바탕으로 45/50/55/60 RPS hold 구간을 확인한다. `lower-narrow`는 40/45/50/55 RPS 확인용이다.
 
 Steady load:
 
@@ -108,6 +117,8 @@ Steady load:
 
 ```powershell
 .\k6\script\run-lt-001.ps1 -ResetStateBeforeRun
+.\k6\script\run-lt-002.ps1 -ResetStateBeforeRun
+.\k6\script\run-lt-002-compact.ps1 -ResetStateBeforeRun
 .\k6\script\run-lt-002-slice-knee.ps1 -ResetStateBeforeRun
 ```
 

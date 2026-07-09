@@ -15,7 +15,7 @@
 
 | 후속 작업 | 목적 | 완료 기준 |
 | --- | --- | --- |
-| LT-002/LT-003 execution evidence | ramp-up과 steady load의 실제 실행 증거를 남긴다. | 각 실행에 대해 `docs/loadtest/results/<test-id>/prometheus-snapshot.json`, `prometheus-snapshot.txt`, `<test-id>-summary.md`가 생성되고 PASS/FAIL/UNKNOWN 사유가 기록된다. |
+| LT-002/LT-003 execution evidence | ramp-up과 steady load의 실제 실행 증거를 남긴다. LT-002 compact는 빠른 재탐색/sanity check로 사용하고, 공식 knee 결론은 full ramp-up 또는 LT-002E 산출물로 확정한다. | 각 실행에 대해 `docs/loadtest/results/<test-id>/prometheus-snapshot.json`, `prometheus-snapshot.txt`, `<test-id>-summary.md`가 생성되고 PASS/FAIL/UNKNOWN 사유가 기록된다. |
 | consumer slow failure injection | Consumer 처리 지연 시 publish/consume imbalance, RabbitMQ ready/unacked, E2E latency가 관측되는지 확인한다. | 지연 주입 방법, 실행 산출물, drain 결과, 병목 판정이 문서화된다. |
 | RabbitMQ unavailable failure injection | RabbitMQ 발행 경로 장애에서 메시지가 Outbox backlog로 남고 복구 후 drain되는지 확인한다. | publish failure/silence, Outbox backlog age, 복구 후 drain 결과가 산출물에 남는다. |
 | retry/DLQ pressure scenario | retry queue 증가와 DLQ 전환 압력을 표준 workflow로 관측한다. | retry enqueue rate, retry depth, DLQ rate/depth, reason code가 보고서에 반영된다. |
