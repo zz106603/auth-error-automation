@@ -24,8 +24,8 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
 $sliceProfileFirstTargetMap = @{
-  "default" = 60
-  "lower-narrow" = 50
+  "default" = 45
+  "lower-narrow" = 40
 }
 
 if ([string]::IsNullOrWhiteSpace($SliceProfile)) {
