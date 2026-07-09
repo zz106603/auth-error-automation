@@ -12,7 +12,10 @@ param(
   [int]$StepSec = 5,
   [string]$BaselinePath = "docs/loadtest/baseline/latest-baseline.json",
   [string]$RulesPath = "k6/loadtest-acceptance-rules.json",
-  [string]$Profile = "local-single-node"
+  [string]$Profile = "local-single-node",
+  [int]$PostRunCounterSettleTimeoutSec = 180,
+  [int]$PostRunCounterSettleIntervalSec = 5,
+  [switch]$IncludeRawPoints
 )
 
 Set-StrictMode -Version Latest
@@ -252,25 +255,28 @@ function Parse-DurationToSeconds {
   return $null
 }
 
-function Parse-K6SlicePlanOrEmpty {
+function Parse-K6LoadPlanOrEmpty {
   param([string]$Path)
 
-  $slices = New-Object System.Collections.Generic.List[Object]
+  $phases = New-Object System.Collections.Generic.List[Object]
   if ([string]::IsNullOrWhiteSpace($Path) -or -not (Test-Path $Path)) {
-    return $slices
+    return $phases
   }
 
   $lines = Get-Content $Path
   foreach ($line in $lines) {
-    if ($line -match '^\[SLICE_START\]\s+slice_index=(?<idx>\d+)\s+target_rps=(?<rps>-?\d+)\s+duration=(?<dur>\d+(ms|s|m|h))\s+timestamp=(?<ts>\S+)$') {
+    if ($line -match '^\[(?<marker>SLICE_START|STAGE_START)\]\s+(?<index_key>slice_index|stage_index)=(?<idx>\d+)\s+target_rps=(?<rps>-?\d+)\s+duration=(?<dur>\d+(ms|s|m|h))\s+timestamp=(?<ts>\S+)$') {
       try {
         $idx = [int]$Matches["idx"]
         $target = [double]$Matches["rps"]
         $durRaw = [string]$Matches["dur"]
         $durSec = Parse-DurationToSeconds -Value $durRaw
         $start = [DateTimeOffset]::Parse([string]$Matches["ts"])
+        $phaseType = if ([string]$Matches["marker"] -eq "STAGE_START") { "stage" } else { "slice" }
         if ($null -ne $durSec) {
-          $slices.Add([pscustomobject]@{
+          $phases.Add([pscustomobject]@{
+            phase_type = $phaseType
+            phase_index = $idx
             slice_index = $idx
             target_rps = $target
             duration_sec = [int]$durSec
@@ -284,33 +290,37 @@ function Parse-K6SlicePlanOrEmpty {
       }
     }
   }
-  return $slices
+  return $phases
 }
 
 function Build-HoldWindowsOrEmpty {
   param(
-    [object]$Slices,
+    [object]$Phases,
     [int64]$RunStartSec,
     [int64]$RunEndSec
   )
 
   $windows = New-Object System.Collections.Generic.List[Object]
-  $sliceArray = To-ObjectArray -Value $Slices
-  if ((Get-SafeCount $sliceArray) -eq 0) { return $windows }
+  $phaseArray = To-ObjectArray -Value $Phases
+  if ((Get-SafeCount $phaseArray) -eq 0) { return $windows }
 
-  foreach ($s in $sliceArray) {
+  foreach ($s in $phaseArray) {
     try {
       $target = [double]$s.target_rps
       $durSec = [int]$s.duration_sec
       $startTs = [int64]$s.start_ts
       $endTs = [int64]$s.end_ts
-      # LT-002E hold phase: target > 0 and long plateau segments.
+      # LT-002/LT-002E hold phase: target > 0 and long enough for sustained checks.
       if ($target -gt 0 -and $durSec -ge 120) {
         $clampedStart = [Math]::Max($RunStartSec, $startTs)
         $clampedEnd = [Math]::Min($RunEndSec, $endTs)
         if ($clampedEnd -gt $clampedStart) {
+          $phaseIndex = if ($null -ne $s.phase_index) { [int]$s.phase_index } else { [int]$s.slice_index }
+          $phaseType = if ($null -ne $s.phase_type) { [string]$s.phase_type } else { "slice" }
           $windows.Add([pscustomobject]@{
-            slice_index = [int]$s.slice_index
+            phase_type = $phaseType
+            phase_index = $phaseIndex
+            slice_index = $phaseIndex
             target_rps = $target
             duration_sec = [int]($clampedEnd - $clampedStart)
             start_ts = [int64]$clampedStart
@@ -355,7 +365,8 @@ function Find-ConsecutiveDurationSecFromPoints {
   param(
     [object]$Points,
     [double]$Threshold,
-    [string]$Operator = "gt"
+    [string]$Operator = "gt",
+    [int]$MaxGapSec = 15
   )
 
   $pointArray = To-ObjectArray -Value $Points
@@ -369,6 +380,10 @@ function Find-ConsecutiveDurationSecFromPoints {
     $v = [double]$curr.value
     $dt = [int][Math]::Max(0, ([int64]$curr.ts - [int64]$prev.ts))
     if ($dt -le 0) { continue }
+    if ($dt -gt $MaxGapSec) {
+      $curSec = 0
+      continue
+    }
 
     $cond = $false
     if ($Operator -eq "gt") { $cond = ($v -gt $Threshold) }
@@ -387,7 +402,10 @@ function Find-ConsecutiveDurationSecFromPoints {
 }
 
 function Find-MaxMonotonicIncreaseDurationSec {
-  param([object]$Points)
+  param(
+    [object]$Points,
+    [int]$MaxGapSec = 15
+  )
 
   $pointArray = To-ObjectArray -Value $Points
   if ((Get-SafeCount $pointArray) -lt 2) { return 0 }
@@ -399,6 +417,10 @@ function Find-MaxMonotonicIncreaseDurationSec {
     $curr = $pointArray[$i]
     $dt = [int][Math]::Max(0, ([int64]$curr.ts - [int64]$prev.ts))
     if ($dt -le 0) { continue }
+    if ($dt -gt $MaxGapSec) {
+      $curSec = 0
+      continue
+    }
     if ([double]$curr.value -ge [double]$prev.value) {
       $curSec += $dt
       if ($curSec -gt $maxSec) { $maxSec = $curSec }
@@ -443,12 +465,23 @@ function Invoke-PromQueryRange {
   $uri = "{0}/api/v1/query_range?query={1}&start={2}&end={3}&step={4}" -f `
     $BaseUrl.TrimEnd('/'), [uri]::EscapeDataString($Query), $StartSec, $EndSec, [uri]::EscapeDataString($Step)
 
-  $response = Invoke-RestMethod -UseBasicParsing -Uri $uri -Method Get
-  if ($null -eq $response -or $response.status -ne "success") {
-    throw "Prometheus query_range failed: $Query"
+  $lastError = $null
+  for ($attempt = 1; $attempt -le 3; $attempt++) {
+    try {
+      $response = Invoke-RestMethod -UseBasicParsing -Uri $uri -Method Get
+      if ($null -ne $response -and $response.status -eq "success") {
+        return $response.data.result
+      }
+      $lastError = "Prometheus query_range returned non-success status"
+    } catch {
+      $lastError = $_.Exception.Message
+    }
+    if ($attempt -lt 3) {
+      Start-Sleep -Milliseconds (250 * $attempt)
+    }
   }
 
-  return $response.data.result
+  throw "Prometheus query_range failed: $Query. last_error=$lastError"
 }
 
 function Invoke-PromQuery {
@@ -461,12 +494,23 @@ function Invoke-PromQuery {
   $uri = "{0}/api/v1/query?query={1}&time={2}" -f `
     $BaseUrl.TrimEnd('/'), [uri]::EscapeDataString($Query), $TimeSec
 
-  $response = Invoke-RestMethod -UseBasicParsing -Uri $uri -Method Get
-  if ($null -eq $response -or $response.status -ne "success") {
-    throw "Prometheus query failed: $Query"
+  $lastError = $null
+  for ($attempt = 1; $attempt -le 3; $attempt++) {
+    try {
+      $response = Invoke-RestMethod -UseBasicParsing -Uri $uri -Method Get
+      if ($null -ne $response -and $response.status -eq "success") {
+        return $response.data.result
+      }
+      $lastError = "Prometheus query returned non-success status"
+    } catch {
+      $lastError = $_.Exception.Message
+    }
+    if ($attempt -lt 3) {
+      Start-Sleep -Milliseconds (250 * $attempt)
+    }
   }
 
-  return $response.data.result
+  throw "Prometheus query failed: $Query. last_error=$lastError"
 }
 
 function Parse-RangeSeries {
@@ -792,6 +836,30 @@ function Parse-InstantScalarOrNull {
   }
 }
 
+function Read-CounterDeltaOrNull {
+  param(
+    [string]$BaseUrl,
+    [string]$CounterQuery,
+    [int64]$StartSec,
+    [int64]$EndSec
+  )
+
+  $startRaw = Invoke-PromQuery -BaseUrl $BaseUrl -Query $CounterQuery -TimeSec $StartSec
+  $endRaw = Invoke-PromQuery -BaseUrl $BaseUrl -Query $CounterQuery -TimeSec $EndSec
+  $startValue = Parse-InstantScalarOrNull -Result $startRaw
+  $endValue = Parse-InstantScalarOrNull -Result $endRaw
+
+  if ($null -eq $startValue -or $null -eq $endValue) {
+    return $null
+  }
+
+  $delta = [double]$endValue - [double]$startValue
+  if ($delta -lt 0) {
+    return $null
+  }
+  return [double]$delta
+}
+
 function Add-ScalarKpi {
   param(
     [hashtable]$Kpis,
@@ -883,8 +951,8 @@ if ($null -ne $drainObservedAt -and $drainObservedAt -gt $postRunObservation) {
 $postRunObservationSec = To-UnixSec -Dt $postRunObservation
 $postRunWindowSec = [int][Math]::Max(1, $postRunObservationSec - $startSec)
 
-$slicePlan = Parse-K6SlicePlanOrEmpty -Path $K6SummaryPath
-$holdWindows = Build-HoldWindowsOrEmpty -Slices $slicePlan -RunStartSec $startSec -RunEndSec $endSec
+$loadPlan = Parse-K6LoadPlanOrEmpty -Path $K6SummaryPath
+$holdWindows = Build-HoldWindowsOrEmpty -Phases $loadPlan -RunStartSec $startSec -RunEndSec $endSec
 
 $queries = @(
   [ordered]@{ id = "ingest_rps"; type = "range"; unit = "rps"; query = 'sum(rate(auth_error_ingest_total{result="success"}[1m]))' },
@@ -983,26 +1051,6 @@ foreach ($q in $queries) {
   }
 }
 
-$postRunCounterQueries = @(
-  [ordered]@{ id = "ingest_total_post_run_delta"; unit = "count"; query = ('sum(increase(auth_error_ingest_total{{result="success"}}[{0}s]))' -f $postRunWindowSec) },
-  [ordered]@{ id = "publish_total_post_run_delta"; unit = "count"; query = ('sum(increase(auth_error_publish_total{{event_type="auth.error.recorded.v1",result="success"}}[{0}s]))' -f $postRunWindowSec) },
-  [ordered]@{ id = "consume_total_post_run_delta"; unit = "count"; query = ('sum(increase(auth_error_consume_total{{event_type="auth.error.recorded.v1",queue="auth.error.recorded.q",result="success"}}[{0}s]))' -f $postRunWindowSec) }
-)
-$postRunCounterValues = @{}
-foreach ($q in $postRunCounterQueries) {
-  try {
-    $raw = Invoke-PromQuery -BaseUrl $PrometheusBaseUrl -Query $q.query -TimeSec $postRunObservationSec
-    $value = Parse-InstantScalarOrNull -Result $raw
-    $postRunCounterValues[$q.id] = $value
-    if ($null -eq $value) {
-      $anomalies.Add("post_run_counter_no_data:$($q.id)")
-    }
-  } catch {
-    $postRunCounterValues[$q.id] = $null
-    $anomalies.Add("post_run_counter_failed:$($q.id):$($_.Exception.Message)")
-  }
-}
-
 # k6 summary values (if present) are included for traceability.
 $k6ErrorRate = $null
 if ($k6Kv.ContainsKey("http_req_failed_rate")) {
@@ -1011,6 +1059,66 @@ if ($k6Kv.ContainsKey("http_req_failed_rate")) {
 $k6HttpReqs = $null
 if ($k6Kv.ContainsKey("http_reqs")) {
   $k6HttpReqs = [double]$k6Kv["http_reqs"]
+}
+
+$postRunCounterQueries = @(
+  [ordered]@{ id = "ingest_total_post_run_delta"; unit = "count"; counter_query = 'sum(auth_error_ingest_total{result="success"})' },
+  [ordered]@{ id = "publish_total_post_run_delta"; unit = "count"; counter_query = 'sum(auth_error_publish_total{event_type="auth.error.recorded.v1",result="success"})' },
+  [ordered]@{ id = "consume_total_post_run_delta"; unit = "count"; counter_query = 'sum(auth_error_consume_total{event_type="auth.error.recorded.v1",queue="auth.error.recorded.q",result="success"})' }
+)
+$postRunCounterValues = @{}
+$postRunCounterPromql = @{}
+$postRunCounterObservedSec = $postRunObservationSec
+$postRunCounterObserved = $postRunObservation
+$counterSettleStartedSec = $postRunObservationSec
+
+while ($true) {
+  $postRunCounterValues = @{}
+  foreach ($q in $postRunCounterQueries) {
+    $postRunCounterPromql[$q.id] = ("({0} @ {1}) - ({0} @ {2})" -f $q.counter_query, $postRunCounterObservedSec, $startSec)
+    try {
+      $value = Read-CounterDeltaOrNull `
+        -BaseUrl $PrometheusBaseUrl `
+        -CounterQuery $q.counter_query `
+        -StartSec $startSec `
+        -EndSec $postRunCounterObservedSec
+      $postRunCounterValues[$q.id] = $value
+    } catch {
+      $postRunCounterValues[$q.id] = $null
+    }
+  }
+
+  $hasAllCounters =
+    $null -ne $postRunCounterValues["ingest_total_post_run_delta"] -and
+    $null -ne $postRunCounterValues["publish_total_post_run_delta"] -and
+    $null -ne $postRunCounterValues["consume_total_post_run_delta"]
+
+  $coverageCaughtUp = $hasAllCounters
+  if ($null -ne $k6HttpReqs -and $hasAllCounters) {
+    $minExpectedForSettle = [Math]::Max(0.0, $k6HttpReqs - 1.0)
+    $coverageCaughtUp =
+      [double]$postRunCounterValues["publish_total_post_run_delta"] -ge $minExpectedForSettle -and
+      [double]$postRunCounterValues["consume_total_post_run_delta"] -ge $minExpectedForSettle
+  }
+
+  $elapsedSettleSec = [int]($postRunCounterObservedSec - $counterSettleStartedSec)
+  if ($coverageCaughtUp -or $elapsedSettleSec -ge $PostRunCounterSettleTimeoutSec) {
+    break
+  }
+
+  Start-Sleep -Seconds $PostRunCounterSettleIntervalSec
+  $postRunCounterObserved = [DateTimeOffset]::Now
+  $postRunCounterObservedSec = To-UnixSec -Dt $postRunCounterObserved
+}
+
+$postRunObservation = $postRunCounterObserved
+$postRunObservationSec = $postRunCounterObservedSec
+$postRunWindowSec = [int][Math]::Max(1, $postRunObservationSec - $startSec)
+
+foreach ($q in $postRunCounterQueries) {
+  if (-not $postRunCounterValues.ContainsKey($q.id) -or $null -eq $postRunCounterValues[$q.id]) {
+    $anomalies.Add("post_run_counter_no_data:$($q.id)")
+  }
 }
 
 # Counter reset anomaly detection.
@@ -1166,12 +1274,13 @@ if ($null -eq $rules) {
     }
   }
 
-  # Use hold windows for LT-002E by default.
-  $useHoldOnly = ($scenarioName -eq "LT-002E" -and (Get-SafeCount $holdWindows) -gt 0)
-  if ($scenarioName -eq "LT-002E" -and -not $useHoldOnly) {
-    Add-Check -Name "hold_windows_detected" -Status "UNKNOWN" -Detail "LT-002E hold windows not detected; fallback to full run"
+  # Use only stable hold windows for ramp/slice scenarios so ramp transitions do not drive sustained verdicts.
+  $requiresHoldWindows = @("LT-002", "LT-002E") -contains $scenarioName
+  $useHoldOnly = ($requiresHoldWindows -and (Get-SafeCount $holdWindows) -gt 0)
+  if ($requiresHoldWindows -and -not $useHoldOnly) {
+    Add-Check -Name "hold_windows_detected" -Status "UNKNOWN" -Detail ("{0} hold windows not detected; fallback to full run" -f $scenarioName)
   } elseif ($useHoldOnly) {
-    Add-Check -Name "hold_windows_detected" -Status "PASS" -Detail ("hold windows detected: {0}" -f (Get-SafeCount $holdWindows))
+    Add-Check -Name "hold_windows_detected" -Status "PASS" -Detail ("{0} hold windows detected: {1}" -f $scenarioName, (Get-SafeCount $holdWindows))
   }
 
   $pipelineP95EvalPts = if ($useHoldOnly) { Filter-PointsByWindows -Points $seriesMap["ingest_to_consume_p95_seconds"] -Windows $holdWindows } else { To-ObjectArray -Value $seriesMap["ingest_to_consume_p95_seconds"] }
@@ -1473,12 +1582,15 @@ $snapshot = [pscustomobject]@{
 
 foreach ($q in $queries) {
   $id = $q.id
-  $snapshot.kpis[$id] = [pscustomobject]@{
+  $kpi = [ordered]@{
     unit = $q.unit
     promql = $q.query
     stats = To-ExportStats -Stats $statsMap[$id]
-    points = @(To-PlainArray -Value $seriesMap[$id])
   }
+  if ($IncludeRawPoints.IsPresent) {
+    $kpi["points"] = @(To-PlainArray -Value $seriesMap[$id])
+  }
+  $snapshot.kpis[$id] = [pscustomobject]$kpi
 }
 
 foreach ($q in $postRunCounterQueries) {
@@ -1486,9 +1598,9 @@ foreach ($q in $postRunCounterQueries) {
     -Kpis $snapshot.kpis `
     -Id $q.id `
     -Unit $q.unit `
-    -Promql $q.query `
+    -Promql $postRunCounterPromql[$q.id] `
     -Value $postRunCounterValues[$q.id] `
-    -Source "prometheus_post_run_increase" `
+    -Source "prometheus_post_run_counter_diff" `
     -ObservedAt $postRunObservation.ToUniversalTime().ToString("o")
 }
 

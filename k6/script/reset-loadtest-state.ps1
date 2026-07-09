@@ -102,21 +102,57 @@ if (-not $pgReady) {
 
 Write-Step "Truncating load-test tables"
 $sql = @'
-TRUNCATE TABLE
-  auth_error_cluster_item,
-  auth_error_cluster,
-  auth_error_analysis_result,
-  processed_message,
-  outbox_message,
-  auth_error
-RESTART IDENTITY CASCADE;
+DO $$
+DECLARE
+  expected_tables text[] := ARRAY[
+    'dead_letter_message',
+    'retry_publish_request',
+    'auth_error_cluster_item',
+    'auth_error_cluster',
+    'auth_error_analysis_result',
+    'processed_message',
+    'outbox_message',
+    'auth_error'
+  ];
+  existing_tables text[];
+  missing_tables text[];
+BEGIN
+  SELECT array_agg(format('%I', table_name))
+  INTO existing_tables
+  FROM unnest(expected_tables) AS t(table_name)
+  WHERE to_regclass(table_name) IS NOT NULL;
 
-SELECT 'auth_error' AS table_name, COUNT(*) AS row_count FROM auth_error
-UNION ALL SELECT 'auth_error_analysis_result', COUNT(*) FROM auth_error_analysis_result
-UNION ALL SELECT 'auth_error_cluster', COUNT(*) FROM auth_error_cluster
-UNION ALL SELECT 'auth_error_cluster_item', COUNT(*) FROM auth_error_cluster_item
-UNION ALL SELECT 'outbox_message', COUNT(*) FROM outbox_message
-UNION ALL SELECT 'processed_message', COUNT(*) FROM processed_message
+  SELECT array_agg(table_name)
+  INTO missing_tables
+  FROM unnest(expected_tables) AS t(table_name)
+  WHERE to_regclass(table_name) IS NULL;
+
+  IF existing_tables IS NULL OR array_length(existing_tables, 1) = 0 THEN
+    RAISE NOTICE 'No load-test tables exist yet; skipping truncate.';
+  ELSE
+    EXECUTE 'TRUNCATE TABLE ' || array_to_string(existing_tables, ', ') || ' RESTART IDENTITY CASCADE';
+  END IF;
+
+  IF missing_tables IS NOT NULL AND array_length(missing_tables, 1) > 0 THEN
+    RAISE NOTICE 'Missing load-test tables skipped: %', array_to_string(missing_tables, ', ');
+  END IF;
+END $$;
+
+WITH expected(table_name) AS (
+  VALUES
+    ('dead_letter_message'),
+    ('retry_publish_request'),
+    ('auth_error_cluster_item'),
+    ('auth_error_cluster'),
+    ('auth_error_analysis_result'),
+    ('processed_message'),
+    ('outbox_message'),
+    ('auth_error')
+)
+SELECT
+  table_name,
+  CASE WHEN to_regclass(table_name) IS NULL THEN 'missing' ELSE 'present' END AS table_status
+FROM expected
 ORDER BY table_name;
 '@
 

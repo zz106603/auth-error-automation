@@ -121,14 +121,17 @@ function Write-DrainSummary {
 
 $deadline = (Get-Date).AddSeconds($TimeoutSec)
 $lastState = $null
+$lastErrorMessage = ""
+$errorCount = 0
 
 "Load-test post-run drain verification" | Out-File -Encoding utf8 $logPath
 "timeout_sec=$TimeoutSec sample_interval_sec=$SampleIntervalSec" | Add-Content -Encoding utf8 $logPath
 
-try {
-  while ((Get-Date) -lt $deadline) {
+while ((Get-Date) -lt $deadline) {
+  try {
     $state = Get-State
     $lastState = $state
+    $lastErrorMessage = ""
     $isDrained = Test-DrainState -State $state
     Write-StateSample -State $state -IsDrained $isDrained
 
@@ -141,24 +144,32 @@ try {
       Write-Host "Artifacts: $OutputDir"
       exit 0
     }
-
-    Start-Sleep -Seconds $SampleIntervalSec
+  }
+  catch {
+    $errorCount++
+    $lastErrorMessage = $_.Exception.Message
+    ("[{0}] sample_error_count={1} error={2}" -f (Get-Date).ToString("o"), $errorCount, $lastErrorMessage) |
+      Add-Content -Encoding utf8 $logPath
+    ("DRAIN SAMPLE ERROR: {0}" -f $lastErrorMessage) | Out-File -Encoding utf8 $errorMarkerPath
   }
 
-  Capture-ActuatorSnapshot
-  "Load-test run contaminated: pipeline did not drain within timeout." | Out-File -Encoding utf8 $markerPath
-  if (Test-Path $errorMarkerPath) { Remove-Item $errorMarkerPath -Force }
-  Write-DrainSummary -Status "contaminated" -LastState $lastState
-  Write-Host "Post-run drain FAIL: run is contaminated." -ForegroundColor Yellow
-  Write-Host "Artifacts: $OutputDir"
-  exit 2
+  Start-Sleep -Seconds $SampleIntervalSec
 }
-catch {
-  $msg = $_.Exception.Message
-  Capture-ActuatorSnapshot
+
+Capture-ActuatorSnapshot
+
+if ($null -eq $lastState) {
+  $msg = if ([string]::IsNullOrWhiteSpace($lastErrorMessage)) { "No drain samples were captured before timeout." } else { $lastErrorMessage }
   ("DRAIN ERROR: {0}" -f $msg) | Out-File -Encoding utf8 $errorMarkerPath
   Write-DrainSummary -Status "error" -LastState $lastState -ErrorMessage $msg
   Write-Host ("Post-run drain ERROR: {0}" -f $msg) -ForegroundColor Red
   Write-Host "Artifacts: $OutputDir"
   exit 3
 }
+
+"Load-test run contaminated: pipeline did not drain within timeout." | Out-File -Encoding utf8 $markerPath
+if (Test-Path $errorMarkerPath) { Remove-Item $errorMarkerPath -Force }
+Write-DrainSummary -Status "contaminated" -LastState $lastState -ErrorMessage $lastErrorMessage
+Write-Host "Post-run drain FAIL: run is contaminated." -ForegroundColor Yellow
+Write-Host "Artifacts: $OutputDir"
+exit 2

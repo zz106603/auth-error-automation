@@ -100,6 +100,17 @@ function SecToMsOrNull {
   }
 }
 
+function FmtUnixUtc {
+  param([object]$Value)
+
+  if ($null -eq $Value) { return "n/a" }
+  try {
+    return [DateTimeOffset]::FromUnixTimeSeconds([int64]$Value).UtcDateTime.ToString("o")
+  } catch {
+    return "n/a"
+  }
+}
+
 function Get-MetricStats {
   param(
     [object]$Kpis,
@@ -334,6 +345,30 @@ $lines.Add(("- hold windows detected: {0}" -f (Safe-Count $holdWindowsMeta)))
 $lines.Add(("- runtime active profiles: {0}" -f $runtimeProfilesText))
 $lines.Add(("- runtime settings: hikariMax={0}, consumerConcurrency={1}, consumerMaxConcurrency={2}, prefetch={3}" -f $metaRuntimeHikariMax, $metaRuntimeConc, $metaRuntimeMaxConc, $metaRuntimePrefetch))
 $lines.Add("")
+if ((Safe-Count $holdWindowsMeta) -gt 0) {
+  $lines.Add("### Hold Windows Used For Sustained Checks")
+  $lines.Add("")
+  $lines.Add("| Type | Index | Target RPS | Duration Sec | Start UTC | End UTC |")
+  $lines.Add("| --- | ---: | ---: | ---: | --- | --- |")
+  foreach ($w in $holdWindowsMeta) {
+    $phaseType = [string](Get-Prop -Object $w -Name "phase_type")
+    $phaseIndex = Get-Prop -Object $w -Name "phase_index"
+    if ([string]::IsNullOrWhiteSpace($phaseType)) { $phaseType = "n/a" }
+    if ($null -eq $phaseIndex) { $phaseIndex = Get-Prop -Object $w -Name "slice_index" }
+    $targetRps = Get-Prop -Object $w -Name "target_rps"
+    $windowDurationSec = Get-Prop -Object $w -Name "duration_sec"
+    $windowStart = FmtUnixUtc (Get-Prop -Object $w -Name "start_ts")
+    $windowEnd = FmtUnixUtc (Get-Prop -Object $w -Name "end_ts")
+    $lines.Add(("| {0} | {1} | {2} | {3} | {4} | {5} |" -f `
+      $phaseType,
+      $phaseIndex,
+      (FmtNum $targetRps 0),
+      (FmtNum $windowDurationSec 0),
+      $windowStart,
+      $windowEnd))
+  }
+  $lines.Add("")
+}
 
 $lines.Add("## 2) KPI 요약")
 $lines.Add("")
