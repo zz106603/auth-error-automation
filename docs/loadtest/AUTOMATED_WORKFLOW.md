@@ -105,13 +105,15 @@ Knee slice:
 .\k6\script\run-lt-002-slice-knee.ps1 -SliceProfile lower-narrow
 ```
 
-기본 LT-002E slice profile은 compact ramp-up 결과를 바탕으로 45/50/55/60 RPS hold 구간을 확인한다. `lower-narrow`는 40/45/50/55 RPS 확인용이다.
+기본 LT-002E slice profile은 30/35/40/45 RPS hold 구간을 확인한다. `lower-narrow`는 기본 구간도 E2E latency sustained check를 통과하지 못할 때 20/25/30/35 RPS를 확인하는 재탐색용이다.
 
 Steady load:
 
 ```powershell
-.\k6\script\run-lt-003-steady.ps1 -TargetRps 85 -SteadyDuration 15m
+.\k6\script\run-lt-003-steady.ps1 -TargetRps 30 -SteadyDuration 15m
 ```
+
+LT-002E `LT-002E-2026-07-09_213445` 기준으로 40 RPS부터 E2E p95 baseline-relative sustained check가 실패했다. LT-003 `LT-003-2026-07-09_223737` 기준으로 30 RPS는 안정 steady 기준선으로 채택하고, 35 RPS는 `LT-003-2026-07-09_220234`에서 종료부 E2E tail spike가 있어 재검증 후보로 둔다.
 
 테스트 전 DB/RabbitMQ 상태를 강제로 비우고 시작해야 하면 공통 옵션을 사용한다.
 
@@ -120,6 +122,7 @@ Steady load:
 .\k6\script\run-lt-002.ps1 -ResetStateBeforeRun
 .\k6\script\run-lt-002-compact.ps1 -ResetStateBeforeRun
 .\k6\script\run-lt-002-slice-knee.ps1 -ResetStateBeforeRun
+.\k6\script\run-lt-003-steady.ps1 -ResetStateBeforeRun
 ```
 
 ## Observability Preflight

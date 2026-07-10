@@ -59,8 +59,9 @@ API
 | Scenario | Evidence |
 | --- | --- |
 | LT-001 Baseline | 5 RPS, E2E p95 약 548ms, Outbox backlog 0, Retry/DLQ depth 0 |
-| LT-002E Slice | 80-90 RPS 구간에서 MQ ready/unacked ≈ 0, Retry depth ≈ 0, DLQ depth ≈ 0 |
-| Knee Estimate | 문서 기준 safe upper bound 약 85 RPS, LT-003 steady load는 후속 검증 대상 |
+| LT-002E Slice | 30/35 RPS 구간은 안정적이고, 40 RPS부터 E2E p95 sustained check가 실패 |
+| LT-003 Steady | 30 RPS 15분 steady PASS, E2E p95 max 약 939ms, publish/consume delta 27,000 일치 |
+| Knee Estimate | 로컬 single-node 기준 안정 steady 기준선은 30 RPS, 35 RPS는 tail spike 재검증 대상 |
 | Workflow | clean start gate -> fixed run window -> drain verification -> Prometheus snapshot |
 
 수치는 로컬 환경 기준이며, 운영환경 성능 보장을 의미하지 않습니다. 이 프로젝트에서 중요한 것은 최고 TPS보다 **장애 신호를 숨기지 않는 측정 방식**입니다.

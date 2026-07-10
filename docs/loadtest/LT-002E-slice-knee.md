@@ -1,5 +1,7 @@
 # LT-002E Knee Slice 결과 (Repeatable Knee Confirmation)
 
+> Historical note: 이 문서는 2026-03 계열 LT-002E 결과 기록이다. 2026-07-09 재검증(`LT-002E-2026-07-09_213445`)에서는 30/35 RPS는 slice 통과, 40 RPS부터 E2E p95 sustained check 실패로 판정했다. 이후 LT-003 `LT-003-2026-07-09_223737`에서 30 RPS가 안정 steady 기준선으로 채택됐고, 35 RPS는 tail spike 재검증 대상으로 남겼다.
+
 ## 0. 실행 정보
 
 - 테스트 시나리오: LT-002E Knee Slice

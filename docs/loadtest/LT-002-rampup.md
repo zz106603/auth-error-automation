@@ -1,5 +1,7 @@
 # LT-002 Ramp-up 결과 (Baseline-Aware Threshold Discovery)
 
+> Historical note: 이 문서는 2026-02 계열 ramp-up 결과 기록이다. 2026-07-09 재검증에서는 LT-002E `LT-002E-2026-07-09_213445` 기준 30/35 RPS는 slice 통과, 40 RPS부터 E2E p95 sustained check 실패로 판단했다. 이후 LT-003 `LT-003-2026-07-09_223737`에서 30 RPS가 안정 steady 기준선으로 채택됐고, 35 RPS는 tail spike 재검증 대상으로 남겼다.
+
 ## 0. 실행 정보
 
 - 실행 일시(LOCAL): 2026-02-27 15:33 ~ 15:58 (KST)

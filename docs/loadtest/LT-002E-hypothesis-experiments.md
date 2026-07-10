@@ -1,5 +1,7 @@
 # LT-002E Knee Slice 설계 문서
 
+> Historical note: 이 설계는 2026-03 계열 60~90 RPS 탐색을 기준으로 작성됐다. 2026-07-09 재검증(`LT-002E-2026-07-09_213445`) 이후 40 RPS부터 E2E p95 sustained check 실패로 판단했다. LT-003 `LT-003-2026-07-09_223737`에서는 30 RPS가 안정 steady 기준선으로 채택됐고, 최신 실행 판단은 `docs/loadtest/LT-003-steady.md`를 따른다.
+
 ## 0. 목적
 
 LT-002E는 LT-002 Ramp-up에서 탐색된 임계점 구간을
