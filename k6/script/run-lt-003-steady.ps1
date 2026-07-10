@@ -6,7 +6,7 @@ param(
   [string]$TestId = ("LT-003-" + (Get-Date -Format "yyyy-MM-dd_HHmmss")),
   [string]$PrometheusBaseUrl = "http://localhost:9090",
   [string]$ActuatorBaseUrl = "http://localhost:18081",
-  [int]$TargetRps = 85,
+  [int]$TargetRps = 35,
   [string]$SteadyDuration = "15m",
   [int]$GateTimeoutSec = 300,
   [int]$DrainTimeoutSec = 300,

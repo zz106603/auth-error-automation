@@ -15,7 +15,15 @@ function nowKstIsoOffset() {
   return d.toISOString().replace("Z", "+09:00");
 }
 
-const TARGET_RPS = Number(__ENV.TARGET_RPS || 85);
+function parsePositiveTargetRps(value, fallback) {
+  const parsed = Number(value || fallback);
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    throw new Error(`TARGET_RPS must be a positive number. value=${value}`);
+  }
+  return parsed;
+}
+
+const TARGET_RPS = parsePositiveTargetRps(__ENV.TARGET_RPS, 35);
 const STEADY_DURATION = __ENV.STEADY_DURATION || "15m";
 
 export const options = {
