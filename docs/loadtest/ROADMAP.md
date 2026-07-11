@@ -16,7 +16,7 @@
 
 | 후속 작업 | 목적 | 완료 기준 |
 | --- | --- | --- |
-| consumer slow failure injection | Consumer 처리 지연 시 publish/consume imbalance, RabbitMQ ready/unacked, E2E latency가 관측되는지 확인한다. | 지연 주입 방법, 실행 산출물, drain 결과, 병목 판정이 문서화된다. |
+| consumer slow failure injection | Consumer 처리 지연 시 publish/consume imbalance, RabbitMQ ready/unacked, E2E latency가 관측되는지 확인한다. | `docs/loadtest/LT-004-consumer-slow.md` 절차로 실행하고, 산출물의 drain 결과와 retry/DLQ 비증가 여부로 병목을 판정한다. |
 | RabbitMQ unavailable failure injection | RabbitMQ 발행 경로 장애에서 메시지가 Outbox backlog로 남고 복구 후 drain되는지 확인한다. | publish failure/silence, Outbox backlog age, 복구 후 drain 결과가 산출물에 남는다. |
 | retry/DLQ pressure scenario | retry queue 증가와 DLQ 전환 압력을 표준 workflow로 관측한다. | retry enqueue rate, retry depth, DLQ rate/depth, reason code가 보고서에 반영된다. |
 | poison message burst scenario | malformed 또는 계약 위반 메시지가 즉시 DLQ로 격리되는지 검증한다. | poison burst 입력, DLQ reason taxonomy, payload hash/delivery count 기준 중복 처리 결과가 기록된다. |

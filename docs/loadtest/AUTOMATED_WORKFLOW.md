@@ -77,6 +77,7 @@ docs/loadtest/results/<test-id>/FAILED-WRAPPER.txt
 - LT-002 compact: full 실행 전후 빠른 재탐색/sanity check용 ramp-up. 공식 knee 결론은 full ramp-up 또는 LT-002E 산출물로 확정한다.
 - LT-002E: knee slice script, `SLICE_PROFILE`, 초기 `[SLICE_START]` marker 확인
 - LT-003: steady script, `TARGET_RPS`, `STEADY_DURATION`
+- LT-004A: consumer slow failure injection script, `TARGET_RPS`, `STEADY_DURATION`, `EXPECTED_CONSUMER_DELAY_MS`
 
 ## 실행 명령
 
@@ -115,6 +116,15 @@ Steady load:
 
 LT-002E `LT-002E-2026-07-09_213445` 기준으로 40 RPS부터 E2E p95 baseline-relative sustained check가 실패했다. LT-003 `LT-003-2026-07-09_223737` 기준으로 30 RPS는 안정 steady 기준선으로 채택하고, 35 RPS는 `LT-003-2026-07-09_220234`에서 종료부 E2E tail spike가 있어 재검증 후보로 둔다.
 
+Consumer slow failure injection:
+
+```powershell
+.\gradlew.bat bootRun --args='--spring.profiles.active=local --auth-error.loadtest.consumer-delay.recorded-ms=150'
+.\k6\script\run-lt-004-consumer-slow.ps1 -ResetStateBeforeRun
+```
+
+LT-004A는 앱이 실제 delay 설정으로 떠 있는지 `auth_error_runtime_consumer_delay_recorded_ms` metric으로 확인한 뒤 k6를 시작한다. 자세한 해석은 `docs/loadtest/LT-004-consumer-slow.md`를 따른다.
+
 테스트 전 DB/RabbitMQ 상태를 강제로 비우고 시작해야 하면 공통 옵션을 사용한다.
 
 ```powershell
@@ -123,6 +133,7 @@ LT-002E `LT-002E-2026-07-09_213445` 기준으로 40 RPS부터 E2E p95 baseline-r
 .\k6\script\run-lt-002-compact.ps1 -ResetStateBeforeRun
 .\k6\script\run-lt-002-slice-knee.ps1 -ResetStateBeforeRun
 .\k6\script\run-lt-003-steady.ps1 -ResetStateBeforeRun
+.\k6\script\run-lt-004-consumer-slow.ps1 -ResetStateBeforeRun
 ```
 
 ## Observability Preflight
