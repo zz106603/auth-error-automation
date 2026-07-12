@@ -40,6 +40,10 @@ outbox:
     fixed-delay-ms: 5000
 
 auth-error:
+  loadtest:
+    consumer-delay:
+      recorded-ms: 0
+
   rabbit:
     retry:
       ttl-short: 10000

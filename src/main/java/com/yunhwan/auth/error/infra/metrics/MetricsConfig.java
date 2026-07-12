@@ -22,6 +22,7 @@ public final class MetricsConfig {
     public static final String METRIC_RUNTIME_CONSUMER_CONCURRENCY = "auth_error.runtime.consumer.concurrency";
     public static final String METRIC_RUNTIME_CONSUMER_MAX_CONCURRENCY = "auth_error.runtime.consumer.max_concurrency";
     public static final String METRIC_RUNTIME_CONSUMER_PREFETCH = "auth_error.runtime.consumer.prefetch";
+    public static final String METRIC_RUNTIME_CONSUMER_DELAY_RECORDED_MS = "auth_error.runtime.consumer.delay.recorded_ms";
     public static final String METRIC_RUNTIME_PROFILE_INFO = "auth_error.runtime.profile.info";
     public static final String METRIC_RECORDED_CONSUMER_CLAIM_SETUP_TOTAL = "auth_error.recorded.consumer.claim_setup";
     public static final String METRIC_RECORDED_CONSUMER_HANDLER_TOTAL = "auth_error.recorded.consumer.handler";

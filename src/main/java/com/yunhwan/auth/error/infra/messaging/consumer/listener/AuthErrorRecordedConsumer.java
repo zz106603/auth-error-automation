@@ -32,17 +32,20 @@ public class AuthErrorRecordedConsumer {
     private final AuthErrorPayloadParser payloadParser;
     private final ConsumerFlowSupport flowSupport;
     private final MeterRegistry meterRegistry;
+    private final ConsumerDelayProperties delayProperties;
 
     public AuthErrorRecordedConsumer(
             @Qualifier("authErrorRecordedHandler") AuthErrorHandler handler,
             AuthErrorPayloadParser payloadParser,
             ConsumerFlowSupport flowSupport,
-            MeterRegistry meterRegistry
+            MeterRegistry meterRegistry,
+            ConsumerDelayProperties delayProperties
     ) {
         this.handler = handler;
         this.payloadParser = payloadParser;
         this.flowSupport = flowSupport;
         this.meterRegistry = meterRegistry;
+        this.delayProperties = delayProperties;
     }
 
     @RabbitListener(queues = RabbitTopologyConfig.Q_RECORDED)
@@ -108,6 +111,8 @@ public class AuthErrorRecordedConsumer {
                         System.nanoTime() - claimSetupStartedAt
                 );
             }
+
+            applyLoadTestDelay(outboxId, eventType);
 
             try {
                 int currentRetry = flowSupport.retryCount(message);
@@ -201,5 +206,19 @@ public class AuthErrorRecordedConsumer {
                 .tag(MetricsConfig.TAG_QUEUE, RabbitTopologyConfig.Q_RECORDED)
                 .register(meterRegistry)
                 .record(durationNanos, TimeUnit.NANOSECONDS);
+    }
+
+    private void applyLoadTestDelay(Long outboxId, String eventType) {
+        long delayMs = delayProperties.getRecordedMs();
+        if (delayMs <= 0) {
+            return;
+        }
+
+        try {
+            Thread.sleep(delayMs);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            log.warn("[AuthErrorConsumer] load-test delay interrupted. outboxId={}, eventType={}", outboxId, eventType);
+        }
     }
 }

@@ -3,6 +3,7 @@ package com.yunhwan.auth.error.infra.metrics;
 import io.micrometer.core.instrument.Gauge;
 import io.micrometer.core.instrument.MeterRegistry;
 import jakarta.annotation.PostConstruct;
+import com.yunhwan.auth.error.infra.messaging.consumer.listener.ConsumerDelayProperties;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.env.Environment;
 import org.springframework.stereotype.Component;
@@ -18,10 +19,12 @@ public class RuntimeConfigMetrics {
     private final int consumerConcurrency;
     private final int consumerMaxConcurrency;
     private final int consumerPrefetch;
+    private final ConsumerDelayProperties consumerDelayProperties;
 
     public RuntimeConfigMetrics(
             MeterRegistry meterRegistry,
             Environment environment,
+            ConsumerDelayProperties consumerDelayProperties,
             @Value("${spring.datasource.hikari.maximum-pool-size:0}") int hikariMaxPoolSize,
             @Value("${spring.rabbitmq.listener.simple.concurrency:0}") String consumerConcurrencyRaw,
             @Value("${spring.rabbitmq.listener.simple.max-concurrency:0}") String consumerMaxConcurrencyRaw,
@@ -29,6 +32,7 @@ public class RuntimeConfigMetrics {
     ) {
         this.meterRegistry = meterRegistry;
         this.environment = environment;
+        this.consumerDelayProperties = consumerDelayProperties;
         this.hikariMaxPoolSize = hikariMaxPoolSize;
         this.consumerConcurrency = parseListenerConcurrency(consumerConcurrencyRaw);
         this.consumerMaxConcurrency = parseListenerConcurrency(consumerMaxConcurrencyRaw);
@@ -47,6 +51,10 @@ public class RuntimeConfigMetrics {
                 .register(meterRegistry);
 
         Gauge.builder(MetricsConfig.METRIC_RUNTIME_CONSUMER_PREFETCH, () -> consumerPrefetch)
+                .register(meterRegistry);
+
+        Gauge.builder(MetricsConfig.METRIC_RUNTIME_CONSUMER_DELAY_RECORDED_MS, consumerDelayProperties,
+                        ConsumerDelayProperties::getRecordedMs)
                 .register(meterRegistry);
 
         String[] profiles = environment.getActiveProfiles();
