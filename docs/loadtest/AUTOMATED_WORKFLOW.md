@@ -78,6 +78,7 @@ docs/loadtest/results/<test-id>/FAILED-WRAPPER.txt
 - LT-002E: knee slice script, `SLICE_PROFILE`, 초기 `[SLICE_START]` marker 확인
 - LT-003: steady script, `TARGET_RPS`, `STEADY_DURATION`
 - LT-004A: consumer slow failure injection script, `TARGET_RPS`, `STEADY_DURATION`, `EXPECTED_CONSUMER_DELAY_MS`
+- LT-004B: RabbitMQ unavailable failure injection script, `TARGET_RPS`, `STEADY_DURATION`, `FAULT_START_DELAY_SEC`, `RABBIT_DOWN_DURATION_SEC`
 
 ## 실행 명령
 
@@ -125,6 +126,14 @@ Consumer slow failure injection:
 
 LT-004A는 앱이 실제 delay 설정으로 떠 있는지 `auth_error_runtime_consumer_delay_recorded_ms` metric으로 확인한 뒤 k6를 시작한다. 자세한 해석은 `docs/loadtest/LT-004-consumer-slow.md`를 따른다.
 
+RabbitMQ unavailable failure injection:
+
+```powershell
+.\k6\script\run-lt-004-rabbitmq-unavailable.ps1 -ResetStateBeforeRun
+```
+
+LT-004B는 k6 시작 marker 확인 후 RabbitMQ container를 지정 시간 동안 중지했다가 다시 시작한다. 자세한 해석은 `docs/loadtest/LT-004-rabbitmq-unavailable.md`를 따른다.
+
 테스트 전 DB/RabbitMQ 상태를 강제로 비우고 시작해야 하면 공통 옵션을 사용한다.
 
 ```powershell
@@ -134,6 +143,7 @@ LT-004A는 앱이 실제 delay 설정으로 떠 있는지 `auth_error_runtime_co
 .\k6\script\run-lt-002-slice-knee.ps1 -ResetStateBeforeRun
 .\k6\script\run-lt-003-steady.ps1 -ResetStateBeforeRun
 .\k6\script\run-lt-004-consumer-slow.ps1 -ResetStateBeforeRun
+.\k6\script\run-lt-004-rabbitmq-unavailable.ps1 -ResetStateBeforeRun
 ```
 
 ## Observability Preflight
