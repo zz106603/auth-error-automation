@@ -67,3 +67,43 @@ auth_error_runtime_consumer_delay_recorded_ms
 - preflight metric이 0이거나 누락된다: 앱이 delay 설정으로 재시작되지 않았다.
 - DLQ/retry가 증가한다: 단순 지연이 아니라 handler 실패 또는 retry 정책 문제가 섞였다.
 - drain이 실패한다: 지연 강도, consumer concurrency/prefetch, 처리량 한계를 분리해서 다시 봐야 한다.
+
+## 실행 증거
+
+### LT-004A-2026-07-13_155542
+
+조건:
+
+- Target RPS: 30
+- Duration: 10m
+- Recorded consumer delay: 150ms
+- Runtime profile: local
+- Consumer concurrency/max-concurrency/prefetch: 4 / 4 / 25
+
+결과:
+
+- k6 HTTP requests: 18,000
+- k6 HTTP failed rate: 0%
+- Runtime delay metric: `auth_error_runtime_consumer_delay_recorded_ms = 150`
+- Run-window publish/consume avg RPS: 28.793 / 22.542
+- Rabbit ready max: 3,787
+- Rabbit unacked max: 100
+- Ingest-to-consume p95/p99 max: 136,293.63ms / 137,209.89ms
+- Retry enqueue RPS: 0
+- Retry queue depth: 0
+- DLQ depth: 0
+- Post-run drain time: 183s
+- Final drain state: Rabbit ready 0, unacked 0, retry 0, DLQ 0, outbox backlog 0
+- Drain-time actuator counter: publish 18,000, consume 18,000
+
+판정:
+
+- Consumer delay로 인한 backpressure가 의도대로 관측되었다.
+- API 요청은 성공했지만 consumer 처리량이 publish보다 낮아져 RabbitMQ ready/unacked와 E2E latency가 증가했다.
+- 지연은 retry/DLQ로 오분류되지 않았다.
+- k6 종료 후 drain이 제한 시간 안에 완료되어 메시지 유실 없이 최종 수렴했다.
+
+주의:
+
+- 자동 report verdict는 `FAIL`이다. 이는 LT-003 steady 기준의 baseline-relative E2E, publish/consume mismatch, Rabbit depth check가 실패했기 때문이며, LT-004A 장애 주입 목적에는 부합한다.
+- `post_run_counters_present`는 Prometheus post-run counter diff에서 publish/consume delta가 `UNKNOWN`으로 기록되었다. 다만 `post_run_drain.actuator.prom` 기준 최종 publish/consume counter가 각각 18,000으로 확인되어 실제 미처리나 유실로 보지는 않는다.
