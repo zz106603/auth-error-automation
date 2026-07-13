@@ -295,6 +295,9 @@ $processedMessageClaimProcessingUpdateMax = Get-MetricStats -Kpis $kpis -MetricN
 $processedMessageMarkDoneP95 = Get-MetricStats -Kpis $kpis -MetricName "processed_message_mark_done_p95_seconds"
 $processedMessageMarkDoneMax = Get-MetricStats -Kpis $kpis -MetricName "processed_message_mark_done_max_seconds"
 $publish = Get-MetricStats -Kpis $kpis -MetricName "publish_rps"
+$publishFailure = Get-MetricStats -Kpis $kpis -MetricName "publish_failure_rps"
+$publishTimeout = Get-MetricStats -Kpis $kpis -MetricName "publish_timeout_rps"
+$publishError = Get-MetricStats -Kpis $kpis -MetricName "publish_error_rps"
 $consume = Get-MetricStats -Kpis $kpis -MetricName "consume_rps"
 $retry = Get-MetricStats -Kpis $kpis -MetricName "retry_enqueue_rps"
 $retryPressure = Get-MetricStats -Kpis $kpis -MetricName "retry_pressure_ratio"
@@ -379,6 +382,7 @@ $lines.Add(("| HTTP p95 / p99 (server, ms) | {0} / {1} | max |" -f (FmtNum (SecT
 $lines.Add(("| ingest->consume p95 / p99 / max (ms) | {0} / {1} / {2} | max |" -f (FmtNum (SecToMsOrNull $ingestToConsumeP95.max) 2), (FmtNum (SecToMsOrNull $ingestToConsumeP99.max) 2), (FmtNum (SecToMsOrNull $ingestToConsumeMax.max) 2)))
 $lines.Add(("| client event->consume p95 / p99 / max (ms) | {0} / {1} / {2} | max |" -f (FmtNum (SecToMsOrNull $clientToConsumeP95.max) 2), (FmtNum (SecToMsOrNull $clientToConsumeP99.max) 2), (FmtNum (SecToMsOrNull $clientToConsumeMax.max) 2)))
 $lines.Add(("| publish / consume RPS | {0} / {1} | avg |" -f (FmtNum $publish.avg 3), (FmtNum $consume.avg 3)))
+$lines.Add(("| publish failure / timeout / error RPS | {0} / {1} / {2} | max |" -f (FmtNum $publishFailure.max 3), (FmtNum $publishTimeout.max 3), (FmtNum $publishError.max 3)))
 $lines.Add(("| publish / consume post-run delta | {0} / {1} | drain-inclusive counter increase |" -f (FmtNum $postRunPublishCounter 3), (FmtNum $postRunConsumeCounter 3)))
 $lines.Add(("| retry enqueue RPS | {0} | avg |" -f (FmtNum $retry.avg 3)))
 $lines.Add(("| retry pressure ratio | {0} | max |" -f (FmtPercent $retryPressure.max)))
