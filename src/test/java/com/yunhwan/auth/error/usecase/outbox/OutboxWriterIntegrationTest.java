@@ -11,6 +11,7 @@ import com.yunhwan.auth.error.usecase.outbox.port.OutboxMessageStore;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.jdbc.core.JdbcTemplate;
 
 import java.time.OffsetDateTime;
@@ -212,6 +213,30 @@ class OutboxWriterIntegrationTest extends AbstractStubIntegrationTest {
         assertThat(outboxMessageStore.findByIdempotencyKey(idemKey).orElseThrow().getId())
                 .withFailMessage("payload mismatch 후에도 기존 메시지가 보존되어야 합니다.")
                 .isEqualTo(first.getId());
+    }
+
+    @Test
+    @DisplayName("[TS-03] payload_hash 없는 outbox_message 수동 insert는 DB 제약으로 실패한다")
+    void payload_hash_없는_outbox_message_수동_insert는_실패한다() {
+        String idempotencyKey = "manual-without-hash:" + UUID.randomUUID();
+
+        assertThatThrownBy(() -> jdbcTemplate.update("""
+                insert into outbox_message
+                  (aggregate_type, aggregate_id, event_type, payload, idempotency_key)
+                values
+                  (?, ?, ?, cast(? as jsonb), ?)
+                """,
+                "AUTH_ERROR",
+                String.valueOf(Math.abs(UUID.randomUUID().getMostSignificantBits())),
+                authErrorRecordedEventDescriptor.eventType(),
+                "{\"authErrorId\":123}",
+                idempotencyKey
+        ))
+                .isInstanceOf(DataIntegrityViolationException.class);
+
+        assertThat(countByIdempotencyKey(idempotencyKey))
+                .withFailMessage("payload_hash 없는 수동 insert는 row를 남기면 안 됩니다.")
+                .isEqualTo(0L);
     }
 
     private long countByIdempotencyKey(String idempotencyKey) {
