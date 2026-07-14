@@ -23,6 +23,9 @@ public final class MetricsConfig {
     public static final String METRIC_RUNTIME_CONSUMER_MAX_CONCURRENCY = "auth_error.runtime.consumer.max_concurrency";
     public static final String METRIC_RUNTIME_CONSUMER_PREFETCH = "auth_error.runtime.consumer.prefetch";
     public static final String METRIC_RUNTIME_CONSUMER_DELAY_RECORDED_MS = "auth_error.runtime.consumer.delay.recorded_ms";
+    public static final String METRIC_RUNTIME_CONSUMER_FAILURE_RECORDED_PERCENT = "auth_error.runtime.consumer.failure.recorded_percent";
+    public static final String METRIC_RUNTIME_CONSUMER_FAILURE_RECORDED_FAIL_UNTIL_RETRY_COUNT = "auth_error.runtime.consumer.failure.recorded_fail_until_retry_count";
+    public static final String METRIC_RUNTIME_CONSUMER_FAILURE_RECORDED_INFO = "auth_error.runtime.consumer.failure.recorded.info";
     public static final String METRIC_RUNTIME_PROFILE_INFO = "auth_error.runtime.profile.info";
     public static final String METRIC_RECORDED_CONSUMER_CLAIM_SETUP_TOTAL = "auth_error.recorded.consumer.claim_setup";
     public static final String METRIC_RECORDED_CONSUMER_HANDLER_TOTAL = "auth_error.recorded.consumer.handler";
@@ -50,6 +53,7 @@ public final class MetricsConfig {
     public static final String TAG_QUEUE_TYPE = "queue_type";
     public static final String TAG_PROFILE = "profile";
     public static final String TAG_OPERATION = "operation";
+    public static final String TAG_MODE = "mode";
 
     // 고정 결과값(집계 안정성)
     public static final String RESULT_SUCCESS = "success";
