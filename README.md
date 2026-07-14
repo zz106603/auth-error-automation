@@ -1,8 +1,8 @@
 # Auth Error Outbox Pipeline
 
-> 인증 오류 이벤트를 **Transactional Outbox + RabbitMQ + Retry/DLQ**로 안전하게 수집하고, 장애 상황에서도 추적 가능한 상태로 남기는 Backend Reliability 프로젝트입니다.
+> 인증 실패 이벤트를 **Transactional Outbox + RabbitMQ + Retry/DLQ**로 안전하게 수집하고, 표준 taxonomy와 운영 원장을 통해 장애 상황에서도 추적 가능한 incident signal로 남기는 Backend Reliability 프로젝트입니다.
 
-단순 메시지 발행 예제가 아니라, **중복 delivery, publish 실패, retry 폭주, DLQ 격리, backlog 증가**를 운영 관점에서 다루는 파이프라인입니다.
+단순 메시지 발행 예제나 로그인 구현이 아니라, **인증 실패 분류, 중복 delivery, publish 실패, retry 폭주, DLQ 격리, backlog 증가**를 운영 관점에서 다루는 파이프라인입니다.
 
 ![architecture.svg](docs/diagrams/architecture.svg)
 
@@ -11,6 +11,7 @@
 | Signal | 구현 포인트 |
 | --- | --- |
 | Transactional Outbox | AuthError 저장과 Outbox enqueue를 같은 DB transaction으로 처리 |
+| Auth Failure Taxonomy | 인증 실패 유형, severity, security signal, operator action 기준 문서화 |
 | Idempotent Consumer | `processed_message.outbox_id` 원장으로 at-least-once 중복 delivery 흡수 |
 | Retry / DLQ | DB retry gate, RabbitMQ TTL retry queue, DLQ reason code 원장화 |
 | Publish Safety | RabbitMQ publisher confirm/return 기반 success/retry/dead 분기 |
@@ -22,6 +23,7 @@
 비동기 파이프라인은 API가 200 OK를 반환해도 뒤쪽에서 조용히 실패할 수 있습니다. 이 프로젝트는 “요청을 받았는가?”보다 아래 질문에 집중합니다.
 
 - 이벤트가 DB와 Outbox에 함께 커밋되는가?
+- 인증 실패 유형이 운영자가 이해할 수 있는 표준 incident signal로 분류되는가?
 - Consumer가 같은 메시지를 여러 번 받아도 안전한가?
 - Retry와 DLQ가 정책대로 동작하고 원인 추적이 가능한가?
 - API latency가 아니라 E2E latency와 backlog age로 병목을 볼 수 있는가?
@@ -45,6 +47,7 @@ API
 현재 구현의 보장 범위입니다.
 
 - **Atomic write**: AuthError와 recorded Outbox를 같은 transaction에서 커밋
+- **Taxonomy**: 인증 실패 유형을 `INVALID_CREDENTIALS`, `TOKEN_INVALID_SIGNATURE`, `AUTH_PROVIDER_TIMEOUT` 같은 표준 type으로 분류하는 정책 기준 보유
 - **Idempotency**: API는 `requestId`, Consumer는 `outbox_id` 기준으로 중복 제어
 - **Retry durability**: retry publish 의도를 DB에 저장한 뒤 별도 poller가 RabbitMQ로 재발행
 - **DLQ visibility**: payload 원문 대신 `payload_hash`, reason code, delivery count 중심으로 추적
@@ -97,6 +100,7 @@ Endpoints:
 ## Docs
 
 - [Architecture](docs/ARCHITECTURE.md)
+- [Auth Failure Taxonomy](docs/AUTH_FAILURE_TAXONOMY.md)
 - [Policy](docs/POLICY.md)
 - [Testing](docs/TESTING.md)
 - [SLI/SLO](docs/SLI_SLO.md)
@@ -108,5 +112,6 @@ Endpoints:
 ## Limitations
 
 - DLQ replay API/worker는 아직 없습니다. 현재는 reason code별 replay 금지/조건부 후보 정책과 운영 승인 기준만 문서화되어 있습니다.
+- 실제 로그인, JWT 발급/검증, OAuth provider 연동은 범위 밖입니다. 인증 실패 이벤트를 운영 분석 가능한 형태로 수집/분류하는 것이 범위입니다.
 - RabbitMQ/PostgreSQL HA, network partition, multi-instance ordering은 별도 검증 대상입니다.
 - DLQ payload 원문 retention, masking, 접근 통제 정책은 운영환경에서 별도 정의가 필요합니다.

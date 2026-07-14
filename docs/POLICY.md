@@ -36,6 +36,7 @@
 auth-error-automation은 다음 책임을 가진다.
 
 - 인증(Auth) 오류를 HTTP API로 수집하여 `AuthError` 도메인 엔티티로 영속화한다.
+- 인증 실패 이벤트를 `docs/AUTH_FAILURE_TAXONOMY.md`의 표준 taxonomy에 맞춰 운영 분석 가능한 incident signal로 정규화한다.
 - AuthError 생성과 Outbox 이벤트 기록은 **동일 트랜잭션**에서 수행된다.
 - Outbox 패턴을 사용해 이벤트를 발행하고, TTL 기반 재시도 및 DLQ를 관리한다.
 - RabbitMQ Consumer는 **at-least-once** 방식으로 메시지를 처리한다.
@@ -50,6 +51,13 @@ auth-error-automation은 다음 책임을 가진다.
 - 인증 오류 1건을 나타내는 도메인 엔티티
 - 상태(`AuthErrorStatus`), 재시도 메타데이터, 요청/예외 컨텍스트를 포함
 - `auth_error` 테이블에 저장됨
+
+### Auth Failure Taxonomy
+- 인증 실패 이벤트를 운영 분석 가능한 표준 유형으로 분류하는 기준
+- 기준 문서: `docs/AUTH_FAILURE_TAXONOMY.md`
+- `INVALID_CREDENTIALS`, `TOKEN_EXPIRED`, `TOKEN_INVALID_SIGNATURE`, `ACCOUNT_LOCKED`, `MFA_FAILED`, `RATE_LIMITED`, `AUTH_PROVIDER_TIMEOUT`, `AUTH_PROVIDER_5XX`, `UNKNOWN_AUTH_ERROR`를 기본 후보로 사용
+- 각 type은 severity, retryable 분석 속성, security signal 여부, operator action, cluster key 후보를 가진다.
+- 알 수 없는 producer 입력은 임의 문자열로 확산하지 않고 `UNKNOWN_AUTH_ERROR`로 정규화한다.
 
 ### OutboxMessage
 - 도메인 이벤트 발행을 위한 Outbox 레코드
@@ -96,6 +104,7 @@ auth-error-automation은 다음 책임을 가진다.
 ### Cluster
 - 동일한 `stack_hash`를 가진 AuthError들의 그룹
 - 다대다 연결 구조
+- #63 이후 taxonomy 필드가 모델에 반영되면 `errorType + provider + stackHash`를 기본 cluster key 후보로 사용한다.
 
 ---
 
@@ -175,6 +184,11 @@ DEAD
 
 - **API 멱등성**
     - `auth_error.dedup_key = requestId` (unique)
+- **Auth failure taxonomy**
+    - 인증 실패 유형의 기준은 `docs/AUTH_FAILURE_TAXONOMY.md`이다.
+    - producer가 보낸 임의 error string은 그대로 집계 기준으로 사용하지 않는다.
+    - 알 수 없거나 허용 목록에 없는 유형은 `UNKNOWN_AUTH_ERROR`로 정규화한다.
+    - raw userId, sessionId, IP, user-agent, credential, token은 taxonomy 집계와 MCP 응답에 원문으로 사용하지 않는다.
 - **Outbox 멱등성**
     - `outbox_message.idempotency_key`는 반드시 `authErrorId` 기반이어야 한다.
     - requestId는 **Outbox idempotencyKey**에 사용하지 않는다. (requestId는 API dedup 목적에만 사용)
@@ -210,6 +224,10 @@ DEAD
     - exception / rootCause message: 최대 1,000자
     - stacktrace: 최대 8,000자
     - 개행 정규화, trim, empty → null
+- Taxonomy 확장 후보:
+    - #63에서 `errorType`, `provider`, `clientType`, `endpoint`, `principalHash`, `ipHash`, `userAgentFamily`를 입력 모델과 DB에 반영한다.
+    - 현재 단계에서는 `docs/AUTH_FAILURE_TAXONOMY.md`가 정책 기준이며, API/DB 계약 변경은 #63 범위로 둔다.
+    - 개인정보성 원문 필드는 저장/로그/MCP 응답에 그대로 사용하지 않는다.
 
 ---
 
