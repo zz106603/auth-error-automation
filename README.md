@@ -50,7 +50,7 @@ API
 - **DLQ visibility**: payload 원문 대신 `payload_hash`, reason code, delivery count 중심으로 추적
 - **Backpressure signal**: Outbox age, queue depth, publish/consume imbalance로 병목 판단
 
-강한 exactly-once, 자동 DLQ replay, 운영환경 HA는 아직 보장하지 않습니다. 목표는 **at-least-once + idempotent side effects + operational visibility**입니다.
+강한 exactly-once, 자동 DLQ replay, 운영환경 HA는 아직 보장하지 않습니다. DLQ replay는 Runbook 기준의 운영 판단 정책만 제공하며, 목표는 **at-least-once + idempotent side effects + operational visibility**입니다.
 
 ## Load Test Evidence
 
@@ -107,6 +107,6 @@ Endpoints:
 
 ## Limitations
 
-- DLQ replay API/worker는 아직 없습니다.
+- DLQ replay API/worker는 아직 없습니다. 현재는 reason code별 replay 금지/조건부 후보 정책과 운영 승인 기준만 문서화되어 있습니다.
 - RabbitMQ/PostgreSQL HA, network partition, multi-instance ordering은 별도 검증 대상입니다.
 - DLQ payload 원문 retention, masking, 접근 통제 정책은 운영환경에서 별도 정의가 필요합니다.

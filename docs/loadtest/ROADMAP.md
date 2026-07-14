@@ -16,12 +16,13 @@
 | #57 - retry/DLQ pressure scenario | 완료 | retry queue 증가와 DLQ 전환 압력을 표준 workflow로 관측하고, retry enqueue/depth, DLQ rate/depth, reason code 원장을 기록한다. | `docs/loadtest/results/LT-004C-2026-07-13_183611/`, `docs/loadtest/results/LT-004C-2026-07-13_185310/`, `docs/loadtest/LT-004-retry-dlq-pressure.md` |
 | #58 - poison message burst scenario | 완료 | malformed 또는 계약 위반 메시지가 즉시 DLQ로 격리되고, 정상 메시지 처리 경로가 유지되는지 검증한다. | `docs/loadtest/results/LT-004D-2026-07-14_104732/`, `docs/loadtest/LT-004-poison-burst.md` |
 | #60 - payload hash hardening | 완료 | Outbox payload drift 탐지의 운영 보장 수준을 명확히 하고, payload_hash NOT NULL/형식 제약과 mismatch 테스트를 반영한다. | `src/main/resources/db/migration/V10__harden_outbox_payload_hash.sql`, `OutboxWriterIntegrationTest`, `docs/POLICY.md` |
+| #61 - DLQ replay operations policy | 완료 | replay API/worker 구현은 보류하고, reason code별 replay 금지/조건부 후보, operator approval, audit trail, idempotency 기준을 문서화한다. | `docs/POLICY.md`, `docs/RUNBOOK.md` |
 
 ## 후속 이슈 후보
 
 | 후속 작업 | 목적 | 완료 기준 |
 | --- | --- | --- |
-| DLQ replay operations | DLQ 원장 이후의 운영 처리를 정의한다. | replay API/worker를 만들지 여부, operator approval, replay idempotency, retention 기준이 문서화된다. |
+| DLQ replay implementation | 정책 확정 이후 실제 replay 실행 기능 필요 여부를 별도 판단한다. | 단건 dry-run, approval, audit ledger, idempotency 회귀 테스트가 설계된 뒤 구현 여부를 결정한다. |
 
 ## 추적 원칙
 

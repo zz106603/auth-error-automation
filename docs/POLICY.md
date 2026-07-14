@@ -24,6 +24,7 @@
 - DB 트랜잭션과 RabbitMQ publish 사이에 분산 트랜잭션은 없다. Outbox/retry 원장이 복구 지점을 제공하지만, RabbitMQ unavailable/confirm timeout/returned message 장애 주입 증거가 더 필요하다.
 - 강한 exactly-once는 보장하지 않는다. 현재 목표는 at-least-once + idempotent side effects다.
 - DLQ replay API/worker는 없다. `replay_status`는 운영 판단 상태이며 자동 재처리를 의미하지 않는다.
+- DLQ replay의 기본 정책은 금지다. 현재 `RETRY_EXHAUSTED`만 조건부 replay 후보이며, 실행은 operator approval과 별도 audit trail 설계 전까지 제공하지 않는다.
 - `outbox_message.payload_hash`는 payload drift 탐지용 필수 원장 값이며 DB에서 NOT NULL 및 SHA-256 hex 형식 제약으로 보호한다.
 - DLQ 원장은 payload 원문을 DB에 보관한다. 운영 환경에서는 retention, masking, 접근 통제 정책이 추가로 필요하다.
 - single-node local 중심 검증이며 RabbitMQ/PostgreSQL HA, multi-instance ordering, network partition은 아직 별도 검증 대상이다.
@@ -279,6 +280,31 @@ DEAD
     - 중복 DLQ delivery는 `dedupe_key` unique upsert로 같은 dead letter의 반복 도착으로 기록한다.
     - Reason code는 `DeadLetterReasonCode` enum 값만 사용한다.
 
+### 7.1 DLQ Replay 운영 정책
+
+현재 시스템은 DLQ replay API/worker를 제공하지 않는다. `dead_letter_message.replay_status`는 운영자가 사후 판단할 수 있는 후보 상태일 뿐이며, 자동 재처리 또는 실행 가능 보장을 의미하지 않는다.
+
+Replay 판단의 기본값은 **금지**다. DLQ 메시지는 이미 정상 처리 경로에서 벗어난 메시지이므로, 원인 제거 없이 재주입하면 중복 처리, 순서 꼬임, poison message 재유입, payload 원문 취급 리스크가 생긴다.
+
+| Reason code | Replay 정책 | 근거 |
+| --- | --- | --- |
+| `PAYLOAD_INVALID_JSON` | 금지 | JSON 계약 자체가 깨져 동일 payload 재주입 시 재실패한다. |
+| `PAYLOAD_MISSING_AUTH_ERROR_ID` | 금지 | 핵심 식별자가 없어 idempotency와 aggregate 기준을 보장할 수 없다. |
+| `CONTRACT_MISSING_OUTBOX_ID`, `CONTRACT_MISSING_EVENT_TYPE`, `CONTRACT_MISSING_AGGREGATE_TYPE`, `CONTRACT_MISSING_HEADERS` | 금지 | 메시징 계약 위반이므로 producer/consumer 계약 수정 또는 별도 보정이 먼저다. |
+| `DOMAIN_AUTH_ERROR_NOT_FOUND` | 금지 | 데이터 순서 또는 정합성 문제를 먼저 조사해야 하며, 원문 재주입으로 해결한다고 가정할 수 없다. |
+| `HANDLER_NON_RETRYABLE` | 금지 | handler가 복구 불가능 실패로 분류한 메시지다. |
+| `RETRY_EXHAUSTED` | 조건부 후보 | 일시 장애가 해소되었고 동일 idempotency 기준으로 중복 side effect가 없음을 확인한 경우에만 후보가 된다. |
+| `CONSUMER_PROCESSING_FAILED`, `BROKER_REJECTED`, `BROKER_EXPIRED`, `BROKER_MAXLEN`, `UNKNOWN` | 보류 | 원인 분류가 충분하지 않거나 broker 정책 영향이 섞일 수 있어 operator 조사 전 replay 후보로 보지 않는다. |
+
+Replay를 실제 기능으로 구현하려면 다음 조건을 먼저 만족해야 한다.
+
+- operator id, operator note, replay reason, 원인 해소 근거를 필수 입력으로 받는다.
+- 단건 replay와 dry-run/report를 먼저 제공하고, bulk replay는 별도 승인 정책 전까지 금지한다.
+- replay는 기존 business idempotency 기준을 유지한다. 같은 `authErrorId`와 같은 이벤트 의미를 새 idempotency key로 우회하지 않는다.
+- `requested_at`, `started_at`, `completed_at` 또는 `failed_at`, 실패 사유, original DLQ id, original reason code, attempt count를 audit trail로 남긴다.
+- replay 실패 시 자동 반복하지 않고 `REPLAY_FAILED` 또는 `BLOCKED`로 격리한 뒤 operator 재승인을 요구한다.
+- 메시지 유실, 중복, 순서 문제를 검토한 설계 문서와 회귀 테스트가 먼저 있어야 한다.
+
 ---
 
 ## 8. 미확정 / 충돌 상태 (CONFLICT)
@@ -291,7 +317,7 @@ DEAD
 - exactly-once 강보장 여부 (D2)
 - terminal 이후 analysis/cluster 허용 여부 (D3)
 - reaper takeover 조건 강화 여부 (D7)
-- DLQ replay API/worker 제공 여부
+- DLQ replay API/worker 구현 여부. 현재 정책은 문서/Runbook만 제공하고 실행 기능은 보류한다.
 - RabbitMQ publish confirm timeout 이후 중복 publish 가능성을 어느 수준까지 운영 절차로 허용할지
 
 본 시스템은 현재 **운영 자동화·관측 중심** 정책을 따른다.
