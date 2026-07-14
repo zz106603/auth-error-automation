@@ -301,6 +301,7 @@ $publishError = Get-MetricStats -Kpis $kpis -MetricName "publish_error_rps"
 $consume = Get-MetricStats -Kpis $kpis -MetricName "consume_rps"
 $retry = Get-MetricStats -Kpis $kpis -MetricName "retry_enqueue_rps"
 $retryPressure = Get-MetricStats -Kpis $kpis -MetricName "retry_pressure_ratio"
+$dlqRate = Get-MetricStats -Kpis $kpis -MetricName "dlq_rps"
 $outbox95 = Get-MetricStats -Kpis $kpis -MetricName "outbox_age_p95_ms"
 $outbox99 = Get-MetricStats -Kpis $kpis -MetricName "outbox_age_p99_ms"
 $outboxSlope = Get-MetricStats -Kpis $kpis -MetricName "outbox_age_slope_ms_per_10s"
@@ -386,6 +387,7 @@ $lines.Add(("| publish failure / timeout / error RPS | {0} / {1} / {2} | max |" 
 $lines.Add(("| publish / consume post-run delta | {0} / {1} | drain-inclusive counter increase |" -f (FmtNum $postRunPublishCounter 3), (FmtNum $postRunConsumeCounter 3)))
 $lines.Add(("| retry enqueue RPS | {0} | avg |" -f (FmtNum $retry.avg 3)))
 $lines.Add(("| retry pressure ratio | {0} | max |" -f (FmtPercent $retryPressure.max)))
+$lines.Add(("| DLQ RPS | {0} | max |" -f (FmtNum $dlqRate.max 3)))
 $lines.Add(("| outbox age p95 / p99 (ms) | {0} / {1} | max |" -f (FmtNum $outbox95.max 2), (FmtNum $outbox99.max 2)))
 $lines.Add(("| outbox age slope (ms/10s) | {0} | max |" -f (FmtNum $outboxSlope.max 2)))
 $lines.Add(("| outbox backlog count | {0} | max |" -f (FmtNum $outboxBacklog.max 0)))

@@ -5,6 +5,7 @@ param(
   [int]$TimeoutSec = 300,
   [int]$SampleIntervalSec = 10,
   [double]$QueueTolerance = 0.001,
+  [double]$AllowedDlqDepth = 0.001,
   [double]$OutboxAgeToleranceMs = 0.001,
   [double]$PendingTolerance = 0.001
 )
@@ -50,6 +51,8 @@ function Get-State {
     timestamp = (Get-Date).ToString("o")
     rabbit_ready = Invoke-PromScalar 'sum(rabbitmq_detailed_queue_messages_ready{queue!=""})'
     rabbit_unacked = Invoke-PromScalar 'sum(rabbitmq_detailed_queue_messages_unacked{queue!=""})'
+    rabbit_non_dlq_ready = Invoke-PromScalar 'sum(rabbitmq_detailed_queue_messages_ready{queue!="",queue!~".*\\.dlq"})'
+    rabbit_non_dlq_unacked = Invoke-PromScalar 'sum(rabbitmq_detailed_queue_messages_unacked{queue!="",queue!~".*\\.dlq"})'
     retry_depth = Invoke-PromScalar 'sum(rabbitmq_detailed_queue_messages_ready{queue=~".*\\.retry\\..*"}) + sum(rabbitmq_detailed_queue_messages_unacked{queue=~".*\\.retry\\..*"})'
     dlq_depth = Invoke-PromScalar 'sum(rabbitmq_detailed_queue_messages_ready{queue=~".*\\.dlq"}) + sum(rabbitmq_detailed_queue_messages_unacked{queue=~".*\\.dlq"})'
     outbox_backlog_count = Invoke-PromScalar 'max(auth_error_outbox_backlog_count)'
@@ -64,10 +67,10 @@ function Test-DrainState {
   param([hashtable]$State)
 
   return (
-    $State.rabbit_ready -le $QueueTolerance -and
-    $State.rabbit_unacked -le $QueueTolerance -and
+    $State.rabbit_non_dlq_ready -le $QueueTolerance -and
+    $State.rabbit_non_dlq_unacked -le $QueueTolerance -and
     $State.retry_depth -le $QueueTolerance -and
-    $State.dlq_depth -le $QueueTolerance -and
+    $State.dlq_depth -le $AllowedDlqDepth -and
     $State.outbox_backlog_count -le $QueueTolerance -and
     $State.outbox_age_p95_ms -le $OutboxAgeToleranceMs -and
     $State.outbox_age_p99_ms -le $OutboxAgeToleranceMs -and
@@ -86,6 +89,8 @@ function Write-StateSample {
     drained = $IsDrained
     rabbit_ready = $State.rabbit_ready
     rabbit_unacked = $State.rabbit_unacked
+    rabbit_non_dlq_ready = $State.rabbit_non_dlq_ready
+    rabbit_non_dlq_unacked = $State.rabbit_non_dlq_unacked
     retry_depth = $State.retry_depth
     dlq_depth = $State.dlq_depth
     outbox_backlog_count = $State.outbox_backlog_count
@@ -112,6 +117,7 @@ function Write-DrainSummary {
     status = $Status
     timeout_sec = $TimeoutSec
     sample_interval_sec = $SampleIntervalSec
+    allowed_dlq_depth = $AllowedDlqDepth
     last_state = $LastState
     error_message = $ErrorMessage
     artifact_files = @($jsonlPath, $logPath, $summaryPath, $snapshotPath, $markerPath, $errorMarkerPath)
@@ -125,7 +131,7 @@ $lastErrorMessage = ""
 $errorCount = 0
 
 "Load-test post-run drain verification" | Out-File -Encoding utf8 $logPath
-"timeout_sec=$TimeoutSec sample_interval_sec=$SampleIntervalSec" | Add-Content -Encoding utf8 $logPath
+"timeout_sec=$TimeoutSec sample_interval_sec=$SampleIntervalSec allowed_dlq_depth=$AllowedDlqDepth" | Add-Content -Encoding utf8 $logPath
 
 while ((Get-Date) -lt $deadline) {
   try {

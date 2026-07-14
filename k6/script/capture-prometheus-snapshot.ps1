@@ -996,6 +996,7 @@ $queries = @(
   [ordered]@{ id = "consume_rps"; type = "range"; unit = "rps"; query = 'sum(rate(auth_error_consume_total{event_type="auth.error.recorded.v1",queue="auth.error.recorded.q",result="success"}[1m]))' },
   [ordered]@{ id = "retry_enqueue_rps"; type = "range"; unit = "rps"; query = 'sum(rate(auth_error_retry_enqueue_total{event_type="auth.error.recorded.v1",queue="auth.error.recorded.q"}[1m]))' },
   [ordered]@{ id = "retry_pressure_ratio"; type = "range"; unit = "ratio"; query = 'sum(rate(auth_error_retry_enqueue_total{event_type="auth.error.recorded.v1",queue="auth.error.recorded.q"}[1m])) / clamp_min(sum(rate(auth_error_consume_total{event_type="auth.error.recorded.v1",queue="auth.error.recorded.q",result="success"}[1m])), 1e-9)' },
+  [ordered]@{ id = "dlq_rps"; type = "range"; unit = "rps"; query = 'sum(rate(auth_error_dlq_total{event_type="auth.error.recorded.v1"}[1m])) or vector(0)' },
   [ordered]@{ id = "outbox_age_p95_ms"; type = "range"; unit = "ms"; query = 'max(auth_error_outbox_age_p95)' },
   [ordered]@{ id = "outbox_age_p99_ms"; type = "range"; unit = "ms"; query = 'max(auth_error_outbox_age_p99)' },
   [ordered]@{ id = "outbox_age_slope_ms_per_10s"; type = "range"; unit = "ms_per_10s"; query = 'max(auth_error_outbox_age_slope_ms_per_10s)' },

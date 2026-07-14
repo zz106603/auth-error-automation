@@ -21,6 +21,7 @@ param(
   [string]$RulesPath = "k6/loadtest-acceptance-rules.json",
   [string]$Profile = "local-single-node",
   [string[]]$ExtraEnv = @(),
+  [double]$AllowedDlqDepth = 0.001,
   [switch]$ResetStateBeforeRun,
   [switch]$ResetPurgeAllQueues,
   [string]$MarkerName = "",
@@ -388,7 +389,8 @@ try {
     -PrometheusBaseUrl $PrometheusBaseUrl `
     -ActuatorBaseUrl $ActuatorBaseUrl `
     -OutputDir $runDir `
-    -TimeoutSec $DrainTimeoutSec
+    -TimeoutSec $DrainTimeoutSec `
+    -AllowedDlqDepth $AllowedDlqDepth
   $drainExitCode = $LASTEXITCODE
   $wrapperState.post_run_drain_exit_code = $drainExitCode
   Save-WrapperState
