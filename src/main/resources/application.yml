@@ -43,6 +43,10 @@ auth-error:
   loadtest:
     consumer-delay:
       recorded-ms: 0
+    consumer-failure:
+      recorded-mode: off
+      recorded-percent: 0
+      recorded-fail-until-retry-count: 1
 
   rabbit:
     retry:

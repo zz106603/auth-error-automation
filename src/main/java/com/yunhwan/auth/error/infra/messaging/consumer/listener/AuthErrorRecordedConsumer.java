@@ -1,6 +1,7 @@
 package com.yunhwan.auth.error.infra.messaging.consumer.listener;
 
 import com.rabbitmq.client.Channel;
+import com.yunhwan.auth.error.common.exception.RetryableAuthErrorException;
 import com.yunhwan.auth.error.infra.metrics.MetricsConfig;
 import com.yunhwan.auth.error.infra.metrics.RecordedConsumerMetricsContext;
 import com.yunhwan.auth.error.infra.messaging.rabbit.RabbitTopologyConfig;
@@ -33,19 +34,22 @@ public class AuthErrorRecordedConsumer {
     private final ConsumerFlowSupport flowSupport;
     private final MeterRegistry meterRegistry;
     private final ConsumerDelayProperties delayProperties;
+    private final ConsumerFailureInjectionProperties failureInjectionProperties;
 
     public AuthErrorRecordedConsumer(
             @Qualifier("authErrorRecordedHandler") AuthErrorHandler handler,
             AuthErrorPayloadParser payloadParser,
             ConsumerFlowSupport flowSupport,
             MeterRegistry meterRegistry,
-            ConsumerDelayProperties delayProperties
+            ConsumerDelayProperties delayProperties,
+            ConsumerFailureInjectionProperties failureInjectionProperties
     ) {
         this.handler = handler;
         this.payloadParser = payloadParser;
         this.flowSupport = flowSupport;
         this.meterRegistry = meterRegistry;
         this.delayProperties = delayProperties;
+        this.failureInjectionProperties = failureInjectionProperties;
     }
 
     @RabbitListener(queues = RabbitTopologyConfig.Q_RECORDED)
@@ -119,6 +123,8 @@ public class AuthErrorRecordedConsumer {
 
                 long handlerStartedAt = System.nanoTime();
                 try {
+                    maybeInjectLoadTestFailure(outboxId, eventType, parsed, currentRetry);
+
                     // 3) handler 위임
                     handler.handle(payload, buildHeaders(outboxId, eventType, aggregateType, currentRetry));
                 } finally {
@@ -220,5 +226,43 @@ public class AuthErrorRecordedConsumer {
             Thread.currentThread().interrupt();
             log.warn("[AuthErrorConsumer] load-test delay interrupted. outboxId={}, eventType={}", outboxId, eventType);
         }
+    }
+
+    private void maybeInjectLoadTestFailure(Long outboxId,
+                                            String eventType,
+                                            AuthErrorRecordedPayload parsed,
+                                            int currentRetry) {
+        if (!failureInjectionProperties.enabled() || parsed == null) {
+            return;
+        }
+
+        String mode = failureInjectionProperties.normalizedMode();
+        if (!"retry-once".equals(mode) && !"retry-until-dead".equals(mode)) {
+            return;
+        }
+        if (!selectedForFailure(parsed.requestId(), outboxId, failureInjectionProperties.normalizedPercent())) {
+            return;
+        }
+        if ("retry-once".equals(mode)
+                && currentRetry >= failureInjectionProperties.normalizedFailUntilRetryCount()) {
+            return;
+        }
+
+        throw new RetryableAuthErrorException("load-test consumer failure injected. mode=" + mode
+                + ", outboxId=" + outboxId
+                + ", eventType=" + eventType
+                + ", currentRetry=" + currentRetry);
+    }
+
+    private boolean selectedForFailure(String requestId, Long outboxId, int percent) {
+        if (percent <= 0) {
+            return false;
+        }
+        if (percent >= 100) {
+            return true;
+        }
+        String key = (requestId == null || requestId.isBlank()) ? String.valueOf(outboxId) : requestId;
+        int bucket = Math.floorMod(key.hashCode(), 100);
+        return bucket < percent;
     }
 }
