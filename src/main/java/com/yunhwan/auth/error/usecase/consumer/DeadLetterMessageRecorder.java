@@ -143,8 +143,9 @@ public class DeadLetterMessageRecorder {
 
     private ReplayStatus replayStatus(DeadLetterReasonCode reasonCode) {
         return switch (reasonCode) {
-            case RETRY_EXHAUSTED, CONSUMER_PROCESSING_FAILED, BROKER_REJECTED, UNKNOWN -> ReplayStatus.REPLAYABLE;
-            case BROKER_EXPIRED, BROKER_MAXLEN -> ReplayStatus.BLOCKED;
+            case RETRY_EXHAUSTED -> ReplayStatus.REPLAYABLE;
+            case CONSUMER_PROCESSING_FAILED, BROKER_REJECTED, BROKER_EXPIRED, BROKER_MAXLEN, UNKNOWN ->
+                    ReplayStatus.BLOCKED;
             default -> ReplayStatus.NOT_REPLAYABLE;
         };
     }
