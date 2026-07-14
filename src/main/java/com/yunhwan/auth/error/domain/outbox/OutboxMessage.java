@@ -52,7 +52,7 @@ public class OutboxMessage {
     @Column(name = "idempotency_key", nullable = false, length = 200)
     private String idempotencyKey;
 
-    @Column(name = "payload_hash", length = 64)
+    @Column(name = "payload_hash", nullable = false, length = 64)
     private String payloadHash;
 
     @Enumerated(EnumType.STRING)

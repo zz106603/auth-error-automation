@@ -29,10 +29,8 @@ public interface OutboxJpaRepository extends JpaRepository<OutboxMessage, Long> 
       (:aggregateType, :aggregateId, :eventType, CAST(:payloadJson AS jsonb), :idempotencyKey, :payloadHash)
     ON CONFLICT (idempotency_key)
     DO UPDATE SET
-      updated_at = :now,
-      payload_hash = COALESCE(outbox_message.payload_hash, :payloadHash)
+      updated_at = :now
     WHERE outbox_message.payload_hash = :payloadHash
-       OR (outbox_message.payload_hash IS NULL AND outbox_message.payload = CAST(:payloadJson AS jsonb))
     RETURNING *
     """, nativeQuery = true)
     Optional<OutboxMessage> upsertReturning(
