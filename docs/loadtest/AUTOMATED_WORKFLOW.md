@@ -80,6 +80,7 @@ docs/loadtest/results/<test-id>/FAILED-WRAPPER.txt
 - LT-004A: consumer slow failure injection script, `TARGET_RPS`, `STEADY_DURATION`, `EXPECTED_CONSUMER_DELAY_MS`
 - LT-004B: RabbitMQ unavailable failure injection script, `TARGET_RPS`, `STEADY_DURATION`, `FAULT_START_DELAY_SEC`, `RABBIT_DOWN_DURATION_SEC`
 - LT-004C: retry/DLQ pressure script, `TARGET_RPS`, `STEADY_DURATION`, `FAILURE_MODE`, `EXPECTED_FAILURE_PERCENT`
+- LT-004D: poison message burst script, `TARGET_RPS`, `STEADY_DURATION`, `POISON_TOTAL`
 
 ## 실행 명령
 
@@ -144,6 +145,14 @@ Retry / DLQ pressure:
 
 LT-004C는 앱이 실제 consumer failure injection 설정으로 떠 있는지 runtime metric으로 확인한 뒤 k6를 시작한다. 자세한 해석은 `docs/loadtest/LT-004-retry-dlq-pressure.md`를 따른다.
 
+Poison message burst:
+
+```powershell
+.\k6\script\run-lt-004-poison-burst.ps1 -ResetStateBeforeRun
+```
+
+LT-004D는 정상 API traffic을 k6로 유지하면서 RabbitMQ management API로 malformed/contract violation 메시지를 직접 publish한다. 자세한 해석은 `docs/loadtest/LT-004-poison-burst.md`를 따른다.
+
 테스트 전 DB/RabbitMQ 상태를 강제로 비우고 시작해야 하면 공통 옵션을 사용한다.
 
 ```powershell
@@ -155,6 +164,7 @@ LT-004C는 앱이 실제 consumer failure injection 설정으로 떠 있는지 r
 .\k6\script\run-lt-004-consumer-slow.ps1 -ResetStateBeforeRun
 .\k6\script\run-lt-004-rabbitmq-unavailable.ps1 -ResetStateBeforeRun
 .\k6\script\run-lt-004-retry-dlq-pressure.ps1 -ResetStateBeforeRun
+.\k6\script\run-lt-004-poison-burst.ps1 -ResetStateBeforeRun
 ```
 
 ## Observability Preflight
