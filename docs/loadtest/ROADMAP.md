@@ -13,12 +13,12 @@
 | LT-002/LT-003 execution evidence | 완료 | ramp-up/slice와 steady load의 실제 실행 증거를 남기고, PASS/FAIL 사유와 안정 기준선을 기록한다. | `docs/loadtest/results/LT-002E-2026-07-09_213445/`, `docs/loadtest/results/LT-003-2026-07-09_223737/`, `docs/loadtest/LT-003-steady.md` |
 | #55 - consumer slow failure injection | 완료 | Consumer 처리 지연 시 E2E latency, publish/consume imbalance, RabbitMQ ready/unacked가 증가하고, retry/DLQ 없이 drain되는지 검증한다. | `docs/loadtest/results/LT-004A-2026-07-13_155542/`, `docs/loadtest/LT-004-consumer-slow.md` |
 | #56 - RabbitMQ unavailable failure injection | 완료 | RabbitMQ 발행 경로 장애에서 메시지가 Outbox backlog로 남고, 복구 후 DEAD/DLQ 없이 publish/consume까지 수렴하는지 검증한다. | `docs/loadtest/results/LT-004B-2026-07-13_175403/`, `docs/loadtest/LT-004-rabbitmq-unavailable.md` |
+| #57 - retry/DLQ pressure scenario | 완료 | retry queue 증가와 DLQ 전환 압력을 표준 workflow로 관측하고, retry enqueue/depth, DLQ rate/depth, reason code 원장을 기록한다. | `docs/loadtest/results/LT-004C-2026-07-13_183611/`, `docs/loadtest/results/LT-004C-2026-07-13_185310/`, `docs/loadtest/LT-004-retry-dlq-pressure.md` |
 
 ## 후속 이슈 후보
 
 | 후속 작업 | 목적 | 완료 기준 |
 | --- | --- | --- |
-| retry/DLQ pressure scenario | retry queue 증가와 DLQ 전환 압력을 표준 workflow로 관측한다. | retry enqueue rate, retry depth, DLQ rate/depth, reason code가 보고서에 반영된다. |
 | poison message burst scenario | malformed 또는 계약 위반 메시지가 즉시 DLQ로 격리되는지 검증한다. | poison burst 입력, DLQ reason taxonomy, payload hash/delivery count 기준 중복 처리 결과가 기록된다. |
 | payload hash hardening | Outbox payload drift 탐지의 운영 보장 수준을 명확히 한다. | 기존 row backfill 여부, `payload_hash` NOT NULL 전환 여부, 수동 insert 차단 정책이 결정되고 테스트/문서에 반영된다. |
 | DLQ replay operations | DLQ 원장 이후의 운영 처리를 정의한다. | replay API/worker를 만들지 여부, operator approval, replay idempotency, retention 기준이 문서화된다. |

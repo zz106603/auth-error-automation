@@ -63,6 +63,7 @@ API
 | LT-003 Steady | 30 RPS 15분 steady PASS, E2E p95 max 약 939ms, publish/consume delta 27,000 일치 |
 | LT-004A Consumer Slow | 150ms consumer delay에서 Rabbit ready/unacked와 E2E가 증가했지만 retry/DLQ 0, 최종 publish/consume 18,000 일치 |
 | LT-004B RabbitMQ Unavailable | RabbitMQ 60초 중단 중 Outbox backlog 2,932 / age p95 약 77.6s까지 증가, 복구 후 DEAD/DLQ 없이 최종 PUBLISHED 수렴 |
+| LT-004C Retry / DLQ Pressure | retry-once 20%에서 retry depth 28까지 증가 후 DLQ 없이 수렴, retry-until-dead 5%에서 `RETRY_EXHAUSTED` DLQ 원장 118건 기록 |
 | Knee Estimate | 로컬 single-node 기준 안정 steady 기준선은 30 RPS, 35 RPS는 tail spike 재검증 대상 |
 | Workflow | clean start gate -> fixed run window -> drain verification -> Prometheus snapshot |
 
