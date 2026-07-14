@@ -24,7 +24,7 @@
 - DB 트랜잭션과 RabbitMQ publish 사이에 분산 트랜잭션은 없다. Outbox/retry 원장이 복구 지점을 제공하지만, RabbitMQ unavailable/confirm timeout/returned message 장애 주입 증거가 더 필요하다.
 - 강한 exactly-once는 보장하지 않는다. 현재 목표는 at-least-once + idempotent side effects다.
 - DLQ replay API/worker는 없다. `replay_status`는 운영 판단 상태이며 자동 재처리를 의미하지 않는다.
-- `outbox_message.payload_hash`는 payload drift 탐지용이지만 현재 DB 제약상 nullable이다. 과거 row 또는 수동 insert에는 hash가 없을 수 있다.
+- `outbox_message.payload_hash`는 payload drift 탐지용 필수 원장 값이며 DB에서 NOT NULL 및 SHA-256 hex 형식 제약으로 보호한다.
 - DLQ 원장은 payload 원문을 DB에 보관한다. 운영 환경에서는 retention, masking, 접근 통제 정책이 추가로 필요하다.
 - single-node local 중심 검증이며 RabbitMQ/PostgreSQL HA, multi-instance ordering, network partition은 아직 별도 검증 대상이다.
 
@@ -178,6 +178,8 @@ DEAD
     - `outbox_message.idempotency_key`는 반드시 `authErrorId` 기반이어야 한다.
     - requestId는 **Outbox idempotencyKey**에 사용하지 않는다. (requestId는 API dedup 목적에만 사용)
     - 동일 idempotencyKey는 동일 이벤트 인스턴스를 의미하며, payload 변경은 허용하지 않는다.
+    - `payload_hash`는 Java `PayloadSerializer`가 만든 payload JSON bytes 기준 SHA-256 hex 값이다.
+    - `payload_hash` 없는 Outbox row는 DB 제약상 허용하지 않는다.
 - **Consumer 멱등성**
     - `processed_message.outbox_id`는 PK
 - **원자성**
@@ -290,7 +292,6 @@ DEAD
 - terminal 이후 analysis/cluster 허용 여부 (D3)
 - reaper takeover 조건 강화 여부 (D7)
 - DLQ replay API/worker 제공 여부
-- `outbox_message.payload_hash`의 backfill 및 NOT NULL 전환 여부
 - RabbitMQ publish confirm timeout 이후 중복 publish 가능성을 어느 수준까지 운영 절차로 허용할지
 
 본 시스템은 현재 **운영 자동화·관측 중심** 정책을 따른다.

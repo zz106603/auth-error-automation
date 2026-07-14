@@ -109,4 +109,4 @@ Endpoints:
 
 - DLQ replay API/worker는 아직 없습니다.
 - RabbitMQ/PostgreSQL HA, network partition, multi-instance ordering은 별도 검증 대상입니다.
-- `payload_hash` backfill 및 NOT NULL 전환은 후속 결정 사항입니다.
+- DLQ payload 원문 retention, masking, 접근 통제 정책은 운영환경에서 별도 정의가 필요합니다.
