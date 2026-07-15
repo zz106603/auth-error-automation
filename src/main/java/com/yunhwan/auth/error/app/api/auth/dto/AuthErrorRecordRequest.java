@@ -19,6 +19,15 @@ public record AuthErrorRecordRequest(
         @NotBlank String exceptionClass,
         @NotBlank String stacktrace,
 
+        // optional auth failure taxonomy context
+        String errorType,
+        String provider,
+        String clientType,
+        String endpoint,
+        String principalHash,
+        String ipHash,
+        String userAgentFamily,
+
         // optional context
         String httpMethod,
         String requestUri,

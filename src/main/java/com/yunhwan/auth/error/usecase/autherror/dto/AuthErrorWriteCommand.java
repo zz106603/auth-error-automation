@@ -8,6 +8,14 @@ public record AuthErrorWriteCommand(
 
         Integer httpStatus,
 
+        String errorType,
+        String provider,
+        String clientType,
+        String endpoint,
+        String principalHash,
+        String ipHash,
+        String userAgentFamily,
+
         String httpMethod,
         String requestUri,
         String clientIp,

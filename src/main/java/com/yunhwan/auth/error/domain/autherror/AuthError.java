@@ -81,6 +81,30 @@ public class AuthError {
     @Column(name = "category", length = 50)
     private String category;
 
+    /* ===== 인증 실패 taxonomy ===== */
+    @Enumerated(EnumType.STRING)
+    @Column(name = "error_type", nullable = false, length = 50)
+    private AuthFailureType errorType;
+    @Enumerated(EnumType.STRING)
+    @Column(name = "auth_failure_severity", nullable = false, length = 10)
+    private AuthFailureSeverity authFailureSeverity;
+    @Column(name = "auth_failure_retryable", nullable = false)
+    private boolean authFailureRetryable;
+    @Column(name = "auth_failure_security_signal", nullable = false)
+    private boolean authFailureSecuritySignal;
+    @Column(name = "provider", length = 100)
+    private String provider;
+    @Column(name = "client_type", length = 50)
+    private String clientType;
+    @Column(name = "endpoint")
+    private String endpoint;
+    @Column(name = "principal_hash", length = 64)
+    private String principalHash;
+    @Column(name = "ip_hash", length = 64)
+    private String ipHash;
+    @Column(name = "user_agent_family", length = 100)
+    private String userAgentFamily;
+
     /* ===== 예외 ===== */
     @Column(name = "exception_class", length = 200)
     private String exceptionClass;
@@ -164,12 +188,40 @@ public class AuthError {
                 /* ===== 에러 분류 기본값 ===== */
                 .errorDomain("AUTH")
                 .severity("ERROR")
+                .errorType(AuthFailureType.UNKNOWN_AUTH_ERROR)
+                .authFailureSeverity(AuthFailureSeverity.MEDIUM)
+                .authFailureRetryable(false)
+                .authFailureSecuritySignal(false)
                 .status(AuthErrorStatus.NEW)
                 .retryCount(0)
 
                 /* ===== 기타 기본값 ===== */
                 .dedupKey(requestId) // 지금 구조 기준: requestId 기준 멱등
                 .build();
+    }
+
+    public void applyAuthFailureContext(
+            String errorType,
+            String provider,
+            String clientType,
+            String endpoint,
+            String principalHash,
+            String ipHash,
+            String userAgentFamily
+    ) {
+        AuthFailureType normalizedType = AuthFailureType.from(errorType);
+        this.errorType = normalizedType;
+        this.authFailureSeverity = normalizedType.severity();
+        this.authFailureRetryable = normalizedType.retryable();
+        this.authFailureSecuritySignal = normalizedType.securitySignal();
+        this.errorCode = normalizedType.name();
+        this.category = normalizedType.name();
+        this.provider = provider;
+        this.clientType = clientType;
+        this.endpoint = endpoint;
+        this.principalHash = principalHash;
+        this.ipHash = ipHash;
+        this.userAgentFamily = userAgentFamily;
     }
 
     public void applyRequestContext(
