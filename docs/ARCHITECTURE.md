@@ -20,7 +20,7 @@
 
 본 프로젝트는 실제 로그인, JWT 발급/검증, OAuth provider 연동을 구현하는 인증 서비스가 아니다. 도메인 책임은 외부 인증 시스템 또는 애플리케이션에서 발생한 인증 실패 이벤트를 안정적으로 수집하고, 운영자가 이해 가능한 incident signal로 정규화하는 것이다.
 
-인증 실패 분류 기준은 `docs/AUTH_FAILURE_TAXONOMY.md`를 따른다. #63 이후 입력 모델이 확장되면 `errorType`, `provider`, `clientType`, `endpoint`, hash 기반 principal/IP 식별자를 사용해 통계 view와 MCP diagnostic tool의 read model을 구성한다.
+인증 실패 분류 기준은 `docs/AUTH_FAILURE_TAXONOMY.md`를 따른다. 입력 모델은 `errorType`, `provider`, `clientType`, `endpoint`, hash 기반 principal/IP 식별자를 저장하며, 후속 통계 view와 MCP diagnostic tool은 이 read model을 기준으로 구성한다.
 
 현재 `stack_hash` 기반 clustering은 예외 중심 그룹핑이다. taxonomy가 모델에 반영된 뒤에는 `errorType + provider + stackHash`를 기본 cluster key 후보로 삼고, raw userId, sessionId, IP, user-agent는 cluster key나 로그에 원문으로 사용하지 않는다.
 

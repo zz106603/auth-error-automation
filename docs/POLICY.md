@@ -104,7 +104,7 @@ auth-error-automation은 다음 책임을 가진다.
 ### Cluster
 - 동일한 `stack_hash`를 가진 AuthError들의 그룹
 - 다대다 연결 구조
-- #63 이후 taxonomy 필드가 모델에 반영되면 `errorType + provider + stackHash`를 기본 cluster key 후보로 사용한다.
+- taxonomy 필드가 모델에 반영되어 있으며, 후속 cluster/read model에서는 `errorType + provider + stackHash`를 기본 cluster key 후보로 사용한다.
 
 ---
 
@@ -224,10 +224,13 @@ DEAD
     - exception / rootCause message: 최대 1,000자
     - stacktrace: 최대 8,000자
     - 개행 정규화, trim, empty → null
-- Taxonomy 확장 후보:
-    - #63에서 `errorType`, `provider`, `clientType`, `endpoint`, `principalHash`, `ipHash`, `userAgentFamily`를 입력 모델과 DB에 반영한다.
-    - 현재 단계에서는 `docs/AUTH_FAILURE_TAXONOMY.md`가 정책 기준이며, API/DB 계약 변경은 #63 범위로 둔다.
-    - 개인정보성 원문 필드는 저장/로그/MCP 응답에 그대로 사용하지 않는다.
+- Taxonomy context:
+    - `errorType`: 허용 목록에 없으면 `UNKNOWN_AUTH_ERROR`로 정규화한다.
+    - `provider`, `clientType`, `endpoint`, `userAgentFamily`: 집계 가능한 normalized 값으로 저장한다.
+    - `principalHash`, `ipHash`: SHA-256 hex 형식일 때만 저장한다.
+    - `auth_failure_severity`, `auth_failure_retryable`, `auth_failure_security_signal`은 `errorType` 기준으로 계산해 저장한다.
+    - 기존 `severity` 컬럼은 예외/로그 심각도 호환 필드로 유지하고, taxonomy severity는 `auth_failure_severity`를 사용한다.
+    - 개인정보성 원문 필드는 taxonomy 집계, 로그, MCP 응답에 그대로 사용하지 않는다.
 
 ---
 

@@ -11,7 +11,7 @@
 | Signal | 구현 포인트 |
 | --- | --- |
 | Transactional Outbox | AuthError 저장과 Outbox enqueue를 같은 DB transaction으로 처리 |
-| Auth Failure Taxonomy | 인증 실패 유형, severity, security signal, operator action 기준 문서화 |
+| Auth Failure Taxonomy | 인증 실패 유형, provider/client context, hash 기반 식별 필드 저장 |
 | Idempotent Consumer | `processed_message.outbox_id` 원장으로 at-least-once 중복 delivery 흡수 |
 | Retry / DLQ | DB retry gate, RabbitMQ TTL retry queue, DLQ reason code 원장화 |
 | Publish Safety | RabbitMQ publisher confirm/return 기반 success/retry/dead 분기 |
@@ -47,7 +47,7 @@ API
 현재 구현의 보장 범위입니다.
 
 - **Atomic write**: AuthError와 recorded Outbox를 같은 transaction에서 커밋
-- **Taxonomy**: 인증 실패 유형을 `INVALID_CREDENTIALS`, `TOKEN_INVALID_SIGNATURE`, `AUTH_PROVIDER_TIMEOUT` 같은 표준 type으로 분류하는 정책 기준 보유
+- **Taxonomy**: 인증 실패 유형을 `INVALID_CREDENTIALS`, `TOKEN_INVALID_SIGNATURE`, `AUTH_PROVIDER_TIMEOUT` 같은 표준 type으로 정규화하고 provider/client/hash context를 저장
 - **Idempotency**: API는 `requestId`, Consumer는 `outbox_id` 기준으로 중복 제어
 - **Retry durability**: retry publish 의도를 DB에 저장한 뒤 별도 poller가 RabbitMQ로 재발행
 - **DLQ visibility**: payload 원문 대신 `payload_hash`, reason code, delivery count 중심으로 추적

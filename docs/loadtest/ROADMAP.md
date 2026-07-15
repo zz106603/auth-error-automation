@@ -18,13 +18,13 @@
 | #60 - payload hash hardening | 완료 | Outbox payload drift 탐지의 운영 보장 수준을 명확히 하고, payload_hash NOT NULL/형식 제약과 mismatch 테스트를 반영한다. | `src/main/resources/db/migration/V10__harden_outbox_payload_hash.sql`, `OutboxWriterIntegrationTest`, `docs/POLICY.md` |
 | #61 - DLQ replay operations policy | 완료 | replay API/worker 구현은 보류하고, reason code별 replay 금지/조건부 후보, operator approval, audit trail, idempotency 기준을 문서화한다. | `docs/POLICY.md`, `docs/RUNBOOK.md` |
 | #62 - Auth failure taxonomy | 완료 | 인증 실패 유형, severity, retryable 분석 속성, security signal, operator action, cluster key 후보를 정의한다. | `docs/AUTH_FAILURE_TAXONOMY.md`, `docs/POLICY.md`, `docs/ARCHITECTURE.md`, `README.md` |
+| #63 - AuthError input model expansion | 완료 | taxonomy를 API/DB 모델에 반영하고, provider/client/endpoint/hash context를 원문 개인정보 없이 저장한다. | `V11__extend_auth_error_taxonomy_context.sql`, `AuthError`, `AuthErrorTaxonomyIntegrationTest`, `docs/POLICY.md` |
 
 ## 후속 이슈 후보
 
 | 후속 작업 | 목적 | 완료 기준 |
 | --- | --- | --- |
 | DLQ replay implementation | 정책 확정 이후 실제 replay 실행 기능 필요 여부를 별도 판단한다. | 단건 dry-run, approval, audit ledger, idempotency 회귀 테스트가 설계된 뒤 구현 여부를 결정한다. |
-| AuthError input model expansion | taxonomy를 API/DB 모델에 반영한다. | `errorType`, `provider`, `clientType`, hash 기반 식별 필드 정책과 migration/test가 추가된다. |
 | MCP diagnostic workflow | 인증 실패 통계를 자연어로 조회한다. | read-only MCP tools, 통계 view, Claude 질의 예시, Runbook 연결이 문서화된다. |
 
 ## 추적 원칙

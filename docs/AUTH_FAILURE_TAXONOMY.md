@@ -18,7 +18,7 @@ Taxonomy는 producer가 보낸 임의 문자열을 그대로 신뢰하지 않는
 
 ## 2. 기본 필드 후보
 
-아래 필드는 #63에서 입력 모델과 DB migration으로 반영할 후보이며, #62 단계에서는 정책 기준만 정의한다.
+아래 필드는 AuthError 입력 모델과 DB에 반영된 taxonomy context다.
 
 | Field | 목적 | 원문 보관 정책 |
 | --- | --- | --- |
@@ -74,7 +74,7 @@ Security signal은 보안 이벤트 후보로 우선 검토할지 나타낸다.
 
 ## 7. Cluster 기준
 
-현재 구현은 `exceptionClass + stacktrace top lines` 기반 `stack_hash`를 사용한다. #63 이후 도메인 taxonomy가 모델에 반영되면 cluster key는 `stackHash` 단독보다 auth failure context를 포함해야 한다.
+현재 구현은 `exceptionClass + stacktrace top lines` 기반 `stack_hash`를 사용한다. Auth failure context가 모델에 반영되었으므로, 후속 clustering/read model은 `stackHash` 단독보다 auth failure context를 포함해야 한다.
 
 권장 우선순위:
 
