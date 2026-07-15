@@ -22,7 +22,7 @@
 
 인증 실패 분류 기준은 `docs/AUTH_FAILURE_TAXONOMY.md`를 따른다. 입력 모델은 `errorType`, `provider`, `clientType`, `endpoint`, hash 기반 principal/IP 식별자를 저장하며, 후속 통계 view와 MCP diagnostic tool은 이 read model을 기준으로 구성한다.
 
-현재 `stack_hash` 기반 clustering은 예외 중심 그룹핑이다. taxonomy가 모델에 반영된 뒤에는 `errorType + provider + stackHash`를 기본 cluster key 후보로 삼고, raw userId, sessionId, IP, user-agent는 cluster key나 로그에 원문으로 사용하지 않는다.
+현재 `stack_hash` 기반 clustering은 예외 중심 그룹핑이다. 진단 read model은 `errorType + provider + stackHash`를 기본 cluster 후보로 삼고, raw userId, sessionId, IP, user-agent는 cluster key나 로그에 원문으로 사용하지 않는다.
 
 ## Forbidden Directions
 
@@ -34,4 +34,4 @@
 
 Outbox, Consumer, Retry, DLQ 정책은 usecase 계층의 핵심 안정성 로직이다. API DTO, RabbitMQ/Jackson 구현, 로그/지표 형식 변경은 이 정책 로직으로 전파되지 않아야 한다.
 
-Auth failure taxonomy는 도메인 분석과 MCP 자연어 진단의 기준이다. Taxonomy 변경은 입력 모델, 통계 view, k6 domain-mix payload, MCP tool schema에 영향을 주므로 정책 문서 변경 없이 임의 문자열을 집계 기준으로 확산하지 않는다.
+Auth failure taxonomy는 도메인 분석과 MCP 자연어 진단의 기준이다. Taxonomy 변경은 입력 모델, 진단 read model, k6 domain-mix payload, MCP tool schema에 영향을 주므로 정책 문서 변경 없이 임의 문자열을 집계 기준으로 확산하지 않는다.

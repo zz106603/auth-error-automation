@@ -53,6 +53,18 @@
 | DB 커넥션 포화 | `hikaricp_connections_active`, `hikaricp_connections_pending`, `hikaricp_connections_max`, `auth_error_runtime_hikari_max_pool_size` |
 | RabbitMQ 큐 깊이 | `rabbitmq_detailed_queue_messages_ready`, `rabbitmq_detailed_queue_messages_unacked` |
 
+## DB 진단 Read Model
+
+Prometheus는 시간 흐름과 지연/큐 깊이를 보는 기준이고, PostgreSQL read model은 MCP/Claude가 reason별 통계와 원장 요약을 조회하는 기준이다. 상세 기준은 `docs/MCP_DIAGNOSTIC_READ_MODEL.md`를 따른다.
+
+| 질문 | Read model |
+| --- | --- |
+| 시간대별 인증 실패 유형 분포 | `auth_error_hourly_type_stats` |
+| provider/client/httpStatus/endpoint별 실패 분포 | `auth_error_context_distribution` |
+| top stackHash/errorType cluster 후보 | `auth_error_cluster_summary` |
+| retry publish request 상태 요약 | `retry_publish_request_summary` |
+| DLQ reason/replay status 요약 | `dead_letter_reason_summary` |
+
 ## 추적 키
 
 장애를 추적할 때는 다음 키를 순서대로 연결한다.

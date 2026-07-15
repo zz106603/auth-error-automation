@@ -105,6 +105,7 @@ Endpoints:
 - [Testing](docs/TESTING.md)
 - [SLI/SLO](docs/SLI_SLO.md)
 - [Runbook](docs/RUNBOOK.md)
+- [MCP Diagnostic Read Model](docs/MCP_DIAGNOSTIC_READ_MODEL.md)
 - [Load Test Workflow](docs/loadtest/AUTOMATED_WORKFLOW.md)
 - [Load Test Result Guide](docs/loadtest/RESULT_INTERPRETATION_GUIDE.md)
 - [Load Test Roadmap](docs/loadtest/ROADMAP.md)

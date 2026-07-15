@@ -19,6 +19,7 @@
 | #61 - DLQ replay operations policy | 완료 | replay API/worker 구현은 보류하고, reason code별 replay 금지/조건부 후보, operator approval, audit trail, idempotency 기준을 문서화한다. | `docs/POLICY.md`, `docs/RUNBOOK.md` |
 | #62 - Auth failure taxonomy | 완료 | 인증 실패 유형, severity, retryable 분석 속성, security signal, operator action, cluster key 후보를 정의한다. | `docs/AUTH_FAILURE_TAXONOMY.md`, `docs/POLICY.md`, `docs/ARCHITECTURE.md`, `README.md` |
 | #63 - AuthError input model expansion | 완료 | taxonomy를 API/DB 모델에 반영하고, provider/client/endpoint/hash context를 원문 개인정보 없이 저장한다. | `V11__extend_auth_error_taxonomy_context.sql`, `AuthError`, `AuthErrorTaxonomyIntegrationTest`, `docs/POLICY.md` |
+| #64 - Auth error diagnostic read model | 완료 | MCP/Claude가 사용할 read-only 통계 view와 해석 기준을 추가한다. | `V12__add_auth_error_diagnostic_views.sql`, `docs/MCP_DIAGNOSTIC_READ_MODEL.md`, `AuthErrorDiagnosticReadModelIntegrationTest` |
 
 ## 후속 이슈 후보
 
