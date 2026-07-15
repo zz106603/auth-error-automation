@@ -170,6 +170,13 @@ class AuthErrorPipelineIdempotencyScenarioTest extends AbstractIntegrationTest {
                 OffsetDateTime.now(),
 
                 401,                    // httpStatus
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
                 "GET",                  // httpMethod
                 "/api/test",            // requestUri
                 "127.0.0.1",             // clientIp
