@@ -54,6 +54,14 @@ public class AuthErrorFacade {
 
                 req.httpStatus(),
 
+                req.errorType(),
+                AuthFailureContextNormalizer.normalizeProvider(req.provider()),
+                AuthFailureContextNormalizer.normalizeClientType(req.clientType()),
+                AuthFailureContextNormalizer.normalizeEndpoint(firstNonBlank(req.endpoint(), req.requestUri())),
+                AuthFailureContextNormalizer.normalizeHash(req.principalHash()),
+                AuthFailureContextNormalizer.normalizeHash(req.ipHash()),
+                AuthFailureContextNormalizer.normalizeUserAgentFamily(req.userAgentFamily()),
+
                 req.httpMethod(),
                 req.requestUri(),
                 req.clientIp(),
@@ -124,5 +132,15 @@ public class AuthErrorFacade {
     private static String normalizeLineEndings(String s) {
         // Replace CRLF first, then remaining CR.
         return s.replace("\r\n", "\n").replace("\r", "\n");
+    }
+
+    private static String firstNonBlank(String first, String second) {
+        if (first != null && !first.isBlank()) {
+            return first;
+        }
+        if (second != null && !second.isBlank()) {
+            return second;
+        }
+        return null;
     }
 }
