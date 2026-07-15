@@ -89,6 +89,17 @@ public class AuthErrorWriter {
             );
 
 
+            // 인증 실패 taxonomy context. Outbox payload/idempotency 계약에는 포함하지 않는다.
+            toSave.applyAuthFailureContext(
+                    cmd.errorType(),
+                    cmd.provider(),
+                    cmd.clientType(),
+                    cmd.endpoint(),
+                    cmd.principalHash(),
+                    cmd.ipHash(),
+                    cmd.userAgentFamily()
+            );
+
             // 요청 컨텍스트
             toSave.applyRequestContext(
                     cmd.httpMethod(),
