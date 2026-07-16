@@ -20,6 +20,7 @@
 | #62 - Auth failure taxonomy | 완료 | 인증 실패 유형, severity, retryable 분석 속성, security signal, operator action, cluster key 후보를 정의한다. | `docs/AUTH_FAILURE_TAXONOMY.md`, `docs/POLICY.md`, `docs/ARCHITECTURE.md`, `README.md` |
 | #63 - AuthError input model expansion | 완료 | taxonomy를 API/DB 모델에 반영하고, provider/client/endpoint/hash context를 원문 개인정보 없이 저장한다. | `V11__extend_auth_error_taxonomy_context.sql`, `AuthError`, `AuthErrorTaxonomyIntegrationTest`, `docs/POLICY.md` |
 | #64 - Auth error diagnostic read model | 완료 | MCP/Claude가 사용할 read-only 통계 view와 해석 기준을 추가한다. | `V12__add_auth_error_diagnostic_views.sql`, `docs/MCP_DIAGNOSTIC_READ_MODEL.md`, `AuthErrorDiagnosticReadModelIntegrationTest` |
+| #65 - Domain-mix k6 demo payload | 완료 | taxonomy 기반 payload mix를 표준 workflow로 유입하고, diagnostic read model에 분포가 쌓이는지 확인할 수 있게 한다. | `k6/dm_001_domain_mix.js`, `k6/script/run-dm-001-domain-mix.ps1`, `docs/loadtest/DM-001-domain-mix.md` |
 
 ## 후속 이슈 후보
 

@@ -68,6 +68,7 @@ API
 | LT-004B RabbitMQ Unavailable | RabbitMQ 60초 중단 중 Outbox backlog 2,932 / age p95 약 77.6s까지 증가, 복구 후 DEAD/DLQ 없이 최종 PUBLISHED 수렴 |
 | LT-004C Retry / DLQ Pressure | retry-once 20%에서 retry depth 28까지 증가 후 DLQ 없이 수렴, retry-until-dead 5%에서 `RETRY_EXHAUSTED` DLQ 원장 118건 기록 |
 | LT-004D Poison Burst | malformed/contract violation 80건이 retry 없이 DLQ 원장 4종 reason code로 격리되고, 정상 메시지 2,401건 publish/consume 수렴 |
+| DM-001 Domain Mix | taxonomy 기반 인증 실패 payload mix를 유입해 MCP diagnostic read model의 type/provider/client 분포 demo 데이터 생성 |
 | Knee Estimate | 로컬 single-node 기준 안정 steady 기준선은 30 RPS, 35 RPS는 tail spike 재검증 대상 |
 | Workflow | clean start gate -> fixed run window -> drain verification -> Prometheus snapshot |
 
@@ -106,6 +107,7 @@ Endpoints:
 - [SLI/SLO](docs/SLI_SLO.md)
 - [Runbook](docs/RUNBOOK.md)
 - [MCP Diagnostic Read Model](docs/MCP_DIAGNOSTIC_READ_MODEL.md)
+- [Domain Mix Demo](docs/loadtest/DM-001-domain-mix.md)
 - [Load Test Workflow](docs/loadtest/AUTOMATED_WORKFLOW.md)
 - [Load Test Result Guide](docs/loadtest/RESULT_INTERPRETATION_GUIDE.md)
 - [Load Test Roadmap](docs/loadtest/ROADMAP.md)
