@@ -2,6 +2,14 @@
 
 이 문서는 장애 중 빠르게 판단하고 복구하기 위한 절차다. 자세한 SLI/SLO 기준은 `docs/SLI_SLO.md`를 따른다.
 
+## Claude/MCP read-only 진단
+
+Claude에서 MCP diagnostic server를 사용하는 경우 질문별 tool 매핑과 답변 형식은 [Claude MCP 운영 진단 가이드](MCP_CLAUDE_DIAGNOSTIC_GUIDE.md)를 따른다.
+
+- MCP 결과는 DB 원장과 집계의 read-only 증거이며 Prometheus 지표와 최근 배포/설정 변경 확인을 대체하지 않는다.
+- Claude는 관측 사실, 원인 후보, 미확인 사항을 구분해야 한다.
+- replay, row 수정/삭제, queue purge는 MCP가 실행하지 않으며 Runbook의 금지·operator 승인 기준을 우선한다.
+
 ## 먼저 5분 안에 확인할 것
 
 1. 최근 배포, 설정 변경, RabbitMQ/PostgreSQL 재시작 여부를 확인한다.
