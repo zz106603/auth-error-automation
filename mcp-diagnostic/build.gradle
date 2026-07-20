@@ -1,0 +1,36 @@
+plugins {
+	id 'java'
+	id 'application'
+	id 'org.springframework.boot'
+	id 'io.spring.dependency-management'
+}
+
+group = 'com.yunhwan.auth.error'
+version = '0.0.1-SNAPSHOT'
+description = 'read-only MCP diagnostic server for auth-error-automation'
+
+java {
+	toolchain {
+		languageVersion = JavaLanguageVersion.of(21)
+	}
+}
+
+repositories {
+	mavenCentral()
+}
+
+dependencies {
+	implementation platform('org.springframework.ai:spring-ai-bom:1.1.8')
+	implementation 'org.springframework.ai:spring-ai-starter-mcp-server'
+	implementation 'org.postgresql:postgresql:42.7.7'
+
+	testImplementation 'org.springframework.boot:spring-boot-starter-test'
+}
+
+application {
+	mainClass = 'com.yunhwan.auth.error.mcp.McpDiagnosticServer'
+}
+
+tasks.named('test') {
+	useJUnitPlatform()
+}

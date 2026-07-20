@@ -1,0 +1,21 @@
+spring:
+  application:
+    name: auth-error-diagnostic-mcp
+  main:
+    banner-mode: off
+    web-application-type: none
+  ai:
+    mcp:
+      server:
+        name: auth-error-diagnostic-mcp
+        version: 0.3.0
+        type: SYNC
+        stdio: true
+        annotation-scanner:
+          enabled: true
+        capabilities:
+          tool: true
+          resource: false
+          prompt: false
+          completion: false
+        tool-change-notification: false
