@@ -22,6 +22,7 @@
 | #64 - Auth error diagnostic read model | 완료 | MCP/Claude가 사용할 read-only 통계 view와 해석 기준을 추가한다. | `V12__add_auth_error_diagnostic_views.sql`, `docs/MCP_DIAGNOSTIC_READ_MODEL.md`, `AuthErrorDiagnosticReadModelIntegrationTest` |
 | #65 - Domain-mix k6 demo payload | 완료 | taxonomy 기반 payload mix를 표준 workflow로 유입하고, diagnostic read model에 분포가 쌓이는지 확인할 수 있게 한다. | `k6/dm_001_domain_mix.js`, `k6/script/run-dm-001-domain-mix.ps1`, `docs/loadtest/DM-001-domain-mix.md` |
 | #66 - Read-only MCP diagnostic server | 완료 | Claude가 인증 실패 통계와 원장 요약을 자연어로 조회할 수 있도록 별도 Java MCP stdio 서버를 추가한다. | `mcp-diagnostic`, `docs/MCP_DIAGNOSTIC_SERVER.md` |
+| #67 - Claude 자연어 진단 및 Runbook 연결 | 완료 | 대표 질문을 MCP tool과 매핑하고, 관측 사실·원인 후보·승인 경계를 Runbook 정책에 연결한다. | `docs/MCP_CLAUDE_DIAGNOSTIC_GUIDE.md` |
 
 ## 후속 이슈 후보
 

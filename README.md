@@ -108,6 +108,7 @@ Endpoints:
 - [Runbook](docs/RUNBOOK.md)
 - [MCP Diagnostic Read Model](docs/MCP_DIAGNOSTIC_READ_MODEL.md)
 - [MCP Diagnostic Server](docs/MCP_DIAGNOSTIC_SERVER.md)
+- [Claude MCP Diagnostic Guide](docs/MCP_CLAUDE_DIAGNOSTIC_GUIDE.md)
 - [Domain Mix Demo](docs/loadtest/DM-001-domain-mix.md)
 - [Load Test Workflow](docs/loadtest/AUTOMATED_WORKFLOW.md)
 - [Load Test Result Guide](docs/loadtest/RESULT_INTERPRETATION_GUIDE.md)

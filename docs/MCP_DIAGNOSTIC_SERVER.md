@@ -77,6 +77,8 @@ $env:MCP_DB_PASSWORD = "<password>"
 - retry publish request가 쌓이고 있는지 알려줘.
 - 현재 incident snapshot을 보고 원인 후보를 정리해줘.
 
+질문별 tool 매핑, 기대 답변, Runbook 연결과 replay/데이터 변경 경계는 [Claude MCP 운영 진단 가이드](MCP_CLAUDE_DIAGNOSTIC_GUIDE.md)를 따른다.
+
 ## 6. 예시 MCP 응답
 
 `get_auth_error_summary`는 아래 형태의 JSON text content를 반환한다.
