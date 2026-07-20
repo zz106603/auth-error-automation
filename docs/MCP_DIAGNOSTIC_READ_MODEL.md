@@ -47,3 +47,7 @@
 - DLQ replay 실행
 - AuthError/Retry/DLQ 원장 상태 변경
 - raw payload 또는 개인정보 원문 반환
+
+## 6. 구현 위치
+
+초기 MCP diagnostic server는 같은 repository 안의 별도 Java Gradle 모듈인 `mcp-diagnostic`에 둔다. 메인 Spring Boot 애플리케이션과 별도 프로세스로 실행하며, 자세한 실행 방식과 tool schema는 `docs/MCP_DIAGNOSTIC_SERVER.md`를 따른다.

@@ -107,6 +107,7 @@ Endpoints:
 - [SLI/SLO](docs/SLI_SLO.md)
 - [Runbook](docs/RUNBOOK.md)
 - [MCP Diagnostic Read Model](docs/MCP_DIAGNOSTIC_READ_MODEL.md)
+- [MCP Diagnostic Server](docs/MCP_DIAGNOSTIC_SERVER.md)
 - [Domain Mix Demo](docs/loadtest/DM-001-domain-mix.md)
 - [Load Test Workflow](docs/loadtest/AUTOMATED_WORKFLOW.md)
 - [Load Test Result Guide](docs/loadtest/RESULT_INTERPRETATION_GUIDE.md)
