@@ -2,6 +2,8 @@
 
 이 문서는 #66 read-only MCP diagnostic server의 실행 방식, tool schema, 응답 정책을 정의한다.
 
+데이터 집계 의미는 [MCP Diagnostic Read Model](MCP_DIAGNOSTIC_READ_MODEL.md), Claude 질문·답변 형식은 [Claude MCP 운영 진단 가이드](MCP_CLAUDE_DIAGNOSTIC_GUIDE.md), 관측 후 운영 판단은 [Runbook](RUNBOOK.md)을 따른다. MCP는 Prometheus/Grafana의 시계열 관측을 대체하지 않는다.
+
 서버는 Spring Boot `3.5.9`와 호환되는 Spring AI `1.1.8` MCP server starter를 사용한다. tool은 `@McpTool`, 입력은 `@McpToolParam`으로 선언하며 annotation scanner가 schema와 tool specification을 생성한다. 하위 MCP Java SDK가 JSON-RPC 처리, MCP 초기화, protocol version 협상, stdio transport를 담당하고 애플리케이션 코드는 read-only tool과 조회 로직만 제공한다.
 
 ## 1. 실행 모델

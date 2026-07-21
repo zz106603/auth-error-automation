@@ -1,4 +1,6 @@
 # Load Test Checklist (k6)
+
+> 이 문서는 상세 준비·판정 checklist다. 현재 자동 실행 순서와 명령의 단일 기준은 [Load Test 자동화 워크플로우](loadtest/AUTOMATED_WORKFLOW.md), 운영 임계값은 [SLI/SLO](SLI_SLO.md)다.
 auth-error-automation — Single-Node Local, Production-Grade Strategy
 
 ---
@@ -20,7 +22,7 @@ API latency만 빠른 상태는 성공이 아니다.
 
 > E2E latency + Backlog Age + Stage Throughput 균형이 유지되는 것
 
-현재 문서의 범위는 부하 테스트 판정 기준과 실행 체크리스트다. #51에서 표준 workflow v1은 완료했지만, LT-002/LT-003 실행 증거와 LT-004 장애 주입 결과는 아직 `docs/loadtest/ROADMAP.md`의 후속 항목이다.
+현재 문서의 범위는 부하 테스트 판정 기준과 실행 체크리스트다. 표준 workflow와 LT-001~LT-004D 실행 증거는 완료되어 있으며, 최신 상태와 근거 경로는 [Load Test Roadmap](loadtest/ROADMAP.md)과 [부하 테스트 문서 지도](loadtest/README.md)를 따른다.
 
 ---
 

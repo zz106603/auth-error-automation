@@ -2,6 +2,8 @@
 
 이 문서는 인증 오류 파이프라인이 정상적으로 동작하는지 판단하기 위한 기준이다. 단순히 API 응답 시간만 보지 않고, 요청이 들어온 뒤 Outbox, RabbitMQ, Consumer, Retry/DLQ까지 끝까지 흘러가는지를 함께 본다.
 
+이 문서는 관측 지표와 판단 임계값만 정의한다. 증상별 확인·조치 순서는 [Runbook](RUNBOOK.md), 상태와 replay 정책은 [Policy](POLICY.md), 지표가 흐르는 경로는 [Architecture](ARCHITECTURE.md)를 따른다.
+
 ## 핵심 판단 기준
 
 | 항목 | 무엇을 보는가 | 정상 | 경고 | 장애 | SLO 후보 |
@@ -55,7 +57,7 @@
 
 ## DB 진단 Read Model
 
-Prometheus는 시간 흐름과 지연/큐 깊이를 보는 기준이고, PostgreSQL read model은 MCP/Claude가 reason별 통계와 원장 요약을 조회하는 기준이다. 상세 기준은 `docs/MCP_DIAGNOSTIC_READ_MODEL.md`를 따른다.
+Prometheus는 시간 흐름과 지연/큐 깊이를 보는 기준이고, PostgreSQL read model은 MCP/Claude가 reason별 통계와 원장 요약을 조회하는 기준이다. 상세 기준은 [MCP Diagnostic Read Model](MCP_DIAGNOSTIC_READ_MODEL.md)을 따른다.
 
 | 질문 | Read model |
 | --- | --- |
