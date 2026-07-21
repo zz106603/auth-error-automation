@@ -21,7 +21,7 @@ Claude의 운영 진단 답변은 아래 순서를 따른다.
 | --- | --- | --- | --- |
 | 지난 1시간 동안 인증 실패가 가장 많은 유형은? | `get_auth_error_summary(hoursBack=1)` | `get_top_auth_error_types(hoursBack=1)` | 총량과 type count를 제시하고 [빠른 판단표](RUNBOOK.md#빠른-판단표)로 다음 확인 위치를 안내한다. |
 | `TOKEN_INVALID_SIGNATURE`가 갑자기 늘었어? | `get_auth_error_trend(hoursBack=6, errorType=TOKEN_INVALID_SIGNATURE)` | `get_auth_error_summary(hoursBack=6, errorType=TOKEN_INVALID_SIGNATURE)` | 시간 bucket 증가를 보여주고 security signal 후보로 분류한다. key rotation/signing key/토큰 변조 가능성은 가설로만 제시한다. |
-| 특정 provider에서 `TOKEN_INVALID_SIGNATURE`가 늘었어? | `get_top_auth_error_types(hoursBack=1, provider=...)` | `get_auth_error_trend(hoursBack=6, errorType=TOKEN_INVALID_SIGNATURE)` | 현재 provider 분포와 전체 시간 추이는 확인할 수 있지만 provider별 시간 추이는 직접 증명하지 못한다. 두 결과를 결합해 급증을 단정하지 않는다. |
+| 특정 provider에서 `TOKEN_INVALID_SIGNATURE`가 늘었어? | `get_auth_error_trend(hoursBack=6, provider=..., errorType=TOKEN_INVALID_SIGNATURE)` | `get_auth_error_summary(hoursBack=6, provider=..., errorType=TOKEN_INVALID_SIGNATURE)` | 같은 provider/type 범위의 시간 bucket을 비교한다. 첫 bucket은 조회 시작 시각 이후의 일부 구간일 수 있으므로 급증 판단 시 이를 밝힌다. |
 | provider timeout이 장애와 관련 있어? | `get_auth_error_trend(hoursBack=6, errorType=AUTH_PROVIDER_TIMEOUT)` | `get_retry_summary`, `get_dlq_summary` | 같은 시간대의 retry/DLQ 동반 여부를 제시하고 외부 provider latency/network/circuit breaker 확인을 권고한다. |
 | 특정 `requestId`가 어디서 멈췄어? | `trace_auth_error(requestId=...)` | 필요 시 `traceId` 또는 `outboxId`로 재조회 | AuthError → Outbox → DLQ 원장 존재 여부와 마지막 상태를 보여주고 [먼저 5분 안에 확인할 것](RUNBOOK.md#먼저-5분-안에-확인할-것)에 연결한다. |
 | 특정 `traceId` 또는 `outboxId` 흐름을 보여줘. | `trace_auth_error(traceId=...)` 또는 `trace_auth_error(outboxId=...)` | 없음 | payload 원문 없이 ID, status, reason, timestamp로 경로를 설명한다. row 상태 변경은 제안하지 않는다. |
@@ -194,7 +194,8 @@ replay나 데이터 변경은 실행하거나 무조건 권고하지 마.
 ## 7. 현재 한계
 
 - MCP read model은 DB 원장/집계 기준이며 Prometheus의 API latency, queue depth, publish silence를 직접 반환하지 않는다.
-- provider별 현재 분포와 errorType별 시간 추이는 조회할 수 있지만 provider별 시간 추이를 하나의 tool 결과로 직접 제공하지 않는다.
+- `hoursBack`은 호출 시점 기준 정확한 기간이며 trend의 첫 정각 bucket은 일부 구간만 포함될 수 있다.
+- incident snapshot의 인증 실패 summary/top/cluster에는 같은 provider/errorType/window가 적용되지만 retry/DLQ는 provider/errorType 차원이 없어 시간 범위만 공유한다.
 - 서로 다른 집계 결과의 시간적 동시 발생은 원인 관계를 증명하지 않는다.
 - MCP 응답은 운영 판단을 보조하며 incident 선언, 보안 침해 확정, replay 승인을 대신하지 않는다.
 - write/replay/operator action은 제공하지 않는다.
