@@ -58,7 +58,7 @@ requestId / traceId
   -> outbox_message.id (outboxId)
   -> RabbitMQ header: outboxId / eventType / payloadHash
   -> processed_message.outbox_id
-  -> retry_publish_request 또는 dead_letter_message.outbox_id
+  -> retry_publish_request.source_outbox_id 또는 dead_letter_message.outbox_id
 ```
 
 | 식별자 | 용도 |

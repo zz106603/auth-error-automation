@@ -95,7 +95,7 @@
 
 - 현재 유효 내용을 잃지 않고 삭제할 수 있는 Outdated/Orphan 문서는 발견하지 못했다.
 - 기존 merge 후보 두 문서는 개념 설명과 실행 checklist라는 독립 책임을 확인해 Supporting으로 확정했다.
-- 중간 세션 기록은 `agent/`, 생성 결과는 `loadtest/results/`에 이미 물리적으로 분리되어 있어 이동하지 않았다.
+- 중간 세션 기록은 `docs/agent/`, 생성 결과는 `docs/loadtest/results/`에 이미 물리적으로 분리되어 있어 이동하지 않았다.
 - ELK는 Optional experiment로 유지하며 README Quick Start와 핵심 보장에서 제외했다.
 - 삭제·이동이 없어 경로 호환성은 유지했고, 오래된 LT 미완료 표현만 현재 상태로 정정했다.
 
