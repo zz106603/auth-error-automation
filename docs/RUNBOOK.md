@@ -1,6 +1,6 @@
-# auth-error-automation Runbook
+# 장애 대응 Runbook
 
-이 문서는 장애 중 빠르게 판단하고 복구하기 위한 절차다. 자세한 SLI/SLO 기준은 `docs/SLI_SLO.md`를 따른다.
+이 문서는 장애 중 빠르게 판단하고 복구하기 위한 절차다. 상태 전이와 Retry/DLQ/replay 허용 기준은 [Policy](POLICY.md), metric 임계값은 [SLI/SLO](SLI_SLO.md), 전체 경로와 식별자는 [Architecture](ARCHITECTURE.md)를 단일 기준으로 사용한다.
 
 ## Claude/MCP read-only 진단
 

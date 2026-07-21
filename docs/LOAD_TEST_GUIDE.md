@@ -1,5 +1,7 @@
 # Load Test Checklist (이해 중심 버전)
 
+> 이 문서는 부하 테스트 개념을 설명하는 supporting guide다. 현재 표준 실행 명령과 artifact 구조는 [Load Test 자동화 워크플로우](loadtest/AUTOMATED_WORKFLOW.md), 최종 판정은 [결과 해석 가이드](loadtest/RESULT_INTERPRETATION_GUIDE.md)를 우선한다.
+
 auth-error-automation — Single-Node Local
 
 ---
@@ -207,7 +209,7 @@ API는 빠르게 응답할 수 있다.
 
 # 실행 자동화 (현재 권장)
 
-#51은 standard load-test workflow v1 완료로 정리한다. 남은 LT-002/LT-003 실행 증거, 장애 주입, 결과 해석 가이드는 `docs/loadtest/ROADMAP.md`에서 후속 작업으로 추적한다.
+#51 standard load-test workflow v1과 LT-001~LT-004D 실행 증거는 완료됐다. 최신 실행 결과와 후속 상태는 [Load Test Roadmap](loadtest/ROADMAP.md), 결과 판정 기준은 [결과 해석 가이드](loadtest/RESULT_INTERPRETATION_GUIDE.md)를 따른다.
 
 - LT-002E: `./k6/script/run-lt-002-slice-knee.ps1`
 - LT-003: `./k6/script/run-lt-003-steady.ps1`

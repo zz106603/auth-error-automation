@@ -2,6 +2,8 @@
 
 이 문서는 #67의 Claude 자연어 질문, MCP tool 호출, 응답 작성 기준, Runbook 연결을 정의한다. 목표는 Claude가 임의로 원인을 단정하는 것이 아니라 read-only MCP 결과를 근거로 관측 사실과 원인 후보를 구분해 설명하게 만드는 것이다.
 
+MCP 서버 실행·보안 경계는 [MCP Diagnostic Server](MCP_DIAGNOSTIC_SERVER.md), 집계 의미는 [MCP Diagnostic Read Model](MCP_DIAGNOSTIC_READ_MODEL.md)을 따른다. Grafana의 latency/backlog/queue 시계열과 MCP의 원장 통계는 서로 보완하며 어느 한쪽만으로 원인을 확정하지 않는다.
+
 ## 1. 답변 원칙
 
 Claude의 운영 진단 답변은 아래 순서를 따른다.

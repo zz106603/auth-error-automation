@@ -1,10 +1,12 @@
-# auth-error-automation Policy (v2)
+# 상태 전이와 메시지 처리 정책 (v2)
 
 > 본 문서는 auth-error-automation 시스템의 **단일 정책 기준(Single Source of Truth)** 이다.  
 > 이 정책은 사전 설계 문서가 아닌, **현재 코드가 강제하는 규칙을 명시적으로 선언**한 것이다.  
 > 이후의 설계 변경·리팩토링·테스트는 반드시 본 문서를 기준으로 판단한다.
 >
 > 단, 본 문서는 "현재 정책과 구현이 강제하는 범위"를 정의한다. 강한 exactly-once, 자동 DLQ replay, 운영환경 HA, 실부하 SLO 달성은 아직 보장 범위가 아니다.
+
+이 문서의 단일 책임은 상태 전이, 불변식, 메시징 계약과 Retry/DLQ/replay 규칙이다. 시스템 전체 흐름은 [Architecture](ARCHITECTURE.md), 장애 상황의 확인·조치 순서는 [Runbook](RUNBOOK.md), 정상·경고·장애 수치 기준은 [SLI/SLO](SLI_SLO.md)를 따른다.
 
 ---
 
