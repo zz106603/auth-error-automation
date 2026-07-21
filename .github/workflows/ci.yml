@@ -28,6 +28,9 @@ jobs:
       - name: Run quick tests
         run: ./gradlew quickTest
 
+      - name: Run MCP diagnostic tests
+        run: ./gradlew :mcp-diagnostic:test
+
   integration-test:
     name: Integration Tests
     runs-on: ubuntu-latest

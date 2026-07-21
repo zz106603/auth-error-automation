@@ -10,7 +10,7 @@
 - view는 aggregate/group by 기반이므로 운영 원장 row를 수정하지 않는다.
 - payload 원문, credential, token, raw userId, raw IP는 view에 포함하지 않는다.
 - `principal_hash`, `ip_hash`, `stack_hash`, reason code, count, time bucket 중심으로 답한다.
-- MCP tool은 이 view를 그대로 노출하기보다 기간, limit, provider/type 필터를 적용한 read-only query로 사용한다.
+- MCP tool은 view를 그대로 노출하지 않는다. 정확한 `[now()-hoursBack, now]` 범위와 provider/type 필터가 필요한 tool은 원장에 read-only aggregate query를 수행하고, view는 수동 진단과 시간 bucket 탐색에 사용한다.
 
 ## 2. Views
 
@@ -21,6 +21,8 @@
 | `auth_error_cluster_summary` | top stackHash/errorType cluster 후보 | error_type, provider, stack_hash, severity |
 | `retry_publish_request_summary` | retry publish request 상태와 재발행 압력 | hour, event_type, status |
 | `dead_letter_reason_summary` | DLQ reason/replay status 분포 | hour, reason_code, replay_status, dlq_queue, event_type |
+
+view의 `bucket_hour`는 PostgreSQL 세션 시간대의 정각 경계다. view에서 `bucket_hour >= date_trunc('hour', now() - interval 'N hours')`로 조회하면 첫 bucket 전체가 포함되어 N시간보다 넓어질 수 있다. MCP tool은 이 오차를 피하려고 원장의 실제 timestamp를 먼저 제한한 뒤 집계한다. cluster 역시 전체 기간 view의 `last_seen_at`만 자르지 않고 `auth_error.occurred_at` 범위 안에서 count/firstSeen/lastSeen을 다시 계산한다.
 
 ## 3. 대표 MCP 질문 매핑
 

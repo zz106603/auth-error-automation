@@ -23,6 +23,9 @@ class DatabaseConfigTest {
         assertThat(config.url()).isEqualTo("jdbc:postgresql://db:5432/auth_pipeline");
         assertThat(config.username()).isEqualTo("readonly");
         assertThat(config.password()).isEqualTo("secret");
+        assertThat(config.connectTimeoutSeconds()).isEqualTo(3);
+        assertThat(config.queryTimeoutSeconds()).isEqualTo(5);
+        assertThat(config.maxConcurrentQueries()).isEqualTo(2);
     }
 
     @Test
@@ -44,5 +47,33 @@ class DatabaseConfigTest {
         assertThatThrownBy(() -> DatabaseConfig.fromEnvironment(Map.of()))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("MCP_DB_URL");
+    }
+
+    @Test
+    void 운영_보호_설정을_환경변수에서_읽는다() {
+        DatabaseConfig config = DatabaseConfig.fromEnvironment(Map.of(
+                "MCP_DB_URL", "jdbc:postgresql://db:5432/auth_pipeline",
+                "MCP_DB_USERNAME", "readonly",
+                "MCP_DB_PASSWORD", "secret",
+                "MCP_DB_CONNECT_TIMEOUT_SECONDS", "7",
+                "MCP_DB_QUERY_TIMEOUT_SECONDS", "11",
+                "MCP_DB_MAX_CONCURRENT_QUERIES", "4"
+        ));
+
+        assertThat(config.connectTimeoutSeconds()).isEqualTo(7);
+        assertThat(config.queryTimeoutSeconds()).isEqualTo(11);
+        assertThat(config.maxConcurrentQueries()).isEqualTo(4);
+    }
+
+    @Test
+    void 잘못된_운영_보호_설정은_기동_전에_거부한다() {
+        assertThatThrownBy(() -> DatabaseConfig.fromEnvironment(Map.of(
+                "MCP_DB_URL", "jdbc:postgresql://db:5432/auth_pipeline",
+                "MCP_DB_USERNAME", "readonly",
+                "MCP_DB_PASSWORD", "secret",
+                "MCP_DB_QUERY_TIMEOUT_SECONDS", "0"
+        )))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("MCP_DB_QUERY_TIMEOUT_SECONDS");
     }
 }

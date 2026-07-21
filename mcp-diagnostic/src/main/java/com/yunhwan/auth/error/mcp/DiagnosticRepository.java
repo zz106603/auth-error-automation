@@ -7,31 +7,35 @@ import java.sql.ResultSet;
 import java.sql.ResultSetMetaData;
 import java.sql.Timestamp;
 import java.time.OffsetDateTime;
+import java.util.Properties;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.Semaphore;
 
 class DiagnosticRepository {
 
     private final DatabaseConfig config;
+    private final Semaphore queryPermits;
 
     DiagnosticRepository(DatabaseConfig config) {
         this.config = config;
+        this.queryPermits = new Semaphore(config.maxConcurrentQueries(), true);
     }
 
     Map<String, Object> getAuthErrorSummary(DiagnosticQuery query) throws Exception {
         List<Object> params = new ArrayList<>();
-        String where = authErrorWindowWhere(query, params, "bucket_hour");
+        String where = authErrorWindowWhere(query, params, "occurred_at");
         List<Map<String, Object>> byType = select("""
                 select error_type,
                        auth_failure_severity,
                        auth_failure_retryable,
                        auth_failure_security_signal,
-                       sum(error_count) as error_count,
-                       min(first_seen_at) as first_seen_at,
-                       max(last_seen_at) as last_seen_at
-                  from auth_error_hourly_type_stats
+                       count(*) as error_count,
+                       min(occurred_at) as first_seen_at,
+                       max(occurred_at) as last_seen_at
+                  from auth_error
                 """ + where + """
                  group by error_type, auth_failure_severity, auth_failure_retryable, auth_failure_security_signal
                  order by error_count desc, error_type asc
@@ -51,15 +55,15 @@ class DiagnosticRepository {
 
     List<Map<String, Object>> getAuthErrorTrend(DiagnosticQuery query) throws Exception {
         List<Object> params = new ArrayList<>();
-        String where = authErrorWindowWhere(query, params, "bucket_hour");
+        String where = authErrorWindowWhere(query, params, "occurred_at");
         params.add(query.limit());
         return select("""
-                select bucket_hour,
+                select date_trunc('hour', occurred_at) as bucket_hour,
                        error_type,
-                       sum(error_count) as error_count
-                  from auth_error_hourly_type_stats
+                       count(*) as error_count
+                  from auth_error
                 """ + where + """
-                 group by bucket_hour, error_type
+                 group by date_trunc('hour', occurred_at), error_type
                  order by bucket_hour desc, error_count desc
                  limit ?
                 """, params);
@@ -67,7 +71,7 @@ class DiagnosticRepository {
 
     List<Map<String, Object>> getTopAuthErrorTypes(DiagnosticQuery query) throws Exception {
         List<Object> params = new ArrayList<>();
-        String where = contextWindowWhere(query, params, "bucket_hour");
+        String where = contextWindowWhere(query, params, "occurred_at");
         params.add(query.limit());
         return select("""
                 select error_type,
@@ -75,8 +79,8 @@ class DiagnosticRepository {
                        client_type,
                        http_status,
                        endpoint,
-                       sum(error_count) as error_count
-                  from auth_error_context_distribution
+                       count(*) as error_count
+                  from auth_error
                 """ + where + """
                  group by error_type, provider, client_type, http_status, endpoint
                  order by error_count desc, error_type asc
@@ -93,13 +97,14 @@ class DiagnosticRepository {
                        provider,
                        stack_hash,
                        auth_failure_severity,
-                       error_count,
-                       principal_hash_count,
-                       ip_hash_count,
-                       first_seen_at,
-                       last_seen_at
-                  from auth_error_cluster_summary
+                       count(*) as error_count,
+                       count(distinct principal_hash) filter (where principal_hash is not null) as principal_hash_count,
+                       count(distinct ip_hash) filter (where ip_hash is not null) as ip_hash_count,
+                       min(occurred_at) as first_seen_at,
+                       max(occurred_at) as last_seen_at
+                  from auth_error
                 """ + where + """
+                 group by error_type, provider, stack_hash, auth_failure_severity
                  order by error_count desc, last_seen_at desc
                  limit ?
                 """, params);
@@ -110,18 +115,19 @@ class DiagnosticRepository {
         params.add(query.hoursBack());
         params.add(query.limit());
         return select("""
-                select bucket_hour,
+                select date_trunc('hour', last_seen_at) as bucket_hour,
                        reason_code,
                        replay_status,
                        dlq_queue,
                        event_type,
-                       message_count,
-                       delivery_count_sum,
-                       retry_count_max,
-                       first_seen_at,
-                       last_seen_at
-                  from dead_letter_reason_summary
-                 where bucket_hour >= date_trunc('hour', now() - (? * interval '1 hour'))
+                       count(*) as message_count,
+                       sum(delivery_count) as delivery_count_sum,
+                       max(retry_count) as retry_count_max,
+                       min(first_seen_at) as first_seen_at,
+                       max(last_seen_at) as last_seen_at
+                  from dead_letter_message
+                 where last_seen_at >= now() - (? * interval '1 hour')
+                 group by date_trunc('hour', last_seen_at), reason_code, replay_status, dlq_queue, event_type
                  order by message_count desc, last_seen_at desc
                  limit ?
                 """, params);
@@ -132,16 +138,17 @@ class DiagnosticRepository {
         params.add(query.hoursBack());
         params.add(query.limit());
         return select("""
-                select bucket_hour,
+                select date_trunc('hour', created_at) as bucket_hour,
                        event_type,
                        status,
-                       request_count,
-                       publish_retry_count_sum,
-                       publish_retry_count_max,
-                       earliest_next_publish_at,
-                       last_updated_at
-                  from retry_publish_request_summary
-                 where bucket_hour >= date_trunc('hour', now() - (? * interval '1 hour'))
+                       count(*) as request_count,
+                       sum(publish_retry_count) as publish_retry_count_sum,
+                       max(publish_retry_count) as publish_retry_count_max,
+                       min(next_publish_at) as earliest_next_publish_at,
+                       max(updated_at) as last_updated_at
+                  from retry_publish_request
+                 where created_at >= now() - (? * interval '1 hour')
+                 group by date_trunc('hour', created_at), event_type, status
                  order by request_count desc, last_updated_at desc
                  limit ?
                 """, params);
@@ -206,7 +213,7 @@ class DiagnosticRepository {
                        created_at,
                        updated_at,
                        published_at,
-                       last_error
+                       (last_error is not null) as has_last_error
                   from outbox_message
                 """ + outboxWhere + """
                  order by created_at desc
@@ -242,13 +249,21 @@ class DiagnosticRepository {
     }
 
     private List<Map<String, Object>> select(String sql, List<Object> params) throws Exception {
-        try (Connection connection = DriverManager.getConnection(config.url(), config.username(), config.password())) {
+        if (!queryPermits.tryAcquire()) {
+            throw new DiagnosticQueryRejectedException("동시 진단 조회 한도를 초과했습니다. 잠시 후 다시 시도하세요.");
+        }
+        Properties properties = new Properties();
+        properties.setProperty("user", config.username());
+        properties.setProperty("password", config.password());
+        properties.setProperty("connectTimeout", String.valueOf(config.connectTimeoutSeconds()));
+        try (Connection connection = DriverManager.getConnection(config.url(), properties)) {
             connection.setReadOnly(true);
             connection.setAutoCommit(false);
             try (PreparedStatement readOnly = connection.prepareStatement("set transaction read only")) {
                 readOnly.execute();
             }
             try (PreparedStatement statement = connection.prepareStatement(sql)) {
+                statement.setQueryTimeout(config.queryTimeoutSeconds());
                 for (int i = 0; i < params.size(); i++) {
                     statement.setObject(i + 1, params.get(i));
                 }
@@ -261,13 +276,19 @@ class DiagnosticRepository {
                 connection.rollback();
                 throw exception;
             }
+        } finally {
+            queryPermits.release();
         }
     }
 
     private static String authErrorWindowWhere(DiagnosticQuery query, List<Object> params, String timeColumn) {
         List<String> clauses = new ArrayList<>();
         params.add(query.hoursBack());
-        clauses.add(timeColumn + " >= date_trunc('hour', now() - (? * interval '1 hour'))");
+        clauses.add(timeColumn + " >= now() - (? * interval '1 hour')");
+        if (query.provider() != null) {
+            clauses.add("provider = ?");
+            params.add(query.provider());
+        }
         if (query.errorType() != null) {
             clauses.add("error_type = ?");
             params.add(query.errorType());
@@ -278,7 +299,7 @@ class DiagnosticRepository {
     private static String contextWindowWhere(DiagnosticQuery query, List<Object> params, String timeColumn) {
         List<String> clauses = new ArrayList<>();
         params.add(query.hoursBack());
-        clauses.add(timeColumn + " >= date_trunc('hour', now() - (? * interval '1 hour'))");
+        clauses.add(timeColumn + " >= now() - (? * interval '1 hour')");
         if (query.provider() != null) {
             clauses.add("provider = ?");
             params.add(query.provider());
@@ -293,7 +314,7 @@ class DiagnosticRepository {
     private static String clusterWhere(DiagnosticQuery query, List<Object> params) {
         List<String> clauses = new ArrayList<>();
         params.add(query.hoursBack());
-        clauses.add("last_seen_at >= now() - (? * interval '1 hour')");
+        clauses.add("occurred_at >= now() - (? * interval '1 hour')");
         if (query.provider() != null) {
             clauses.add("provider = ?");
             params.add(query.provider());
@@ -380,5 +401,11 @@ class DiagnosticRepository {
 
     private static Number number(Object value) {
         return value instanceof Number number ? number : 0;
+    }
+
+    static final class DiagnosticQueryRejectedException extends RuntimeException {
+        DiagnosticQueryRejectedException(String message) {
+            super(message);
+        }
     }
 }

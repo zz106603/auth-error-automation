@@ -117,6 +117,8 @@ class DiagnosticMcpTools {
     private static Object execute(RepositoryQuery operation, DiagnosticQuery query) {
         try {
             return operation.execute(query);
+        } catch (DiagnosticRepository.DiagnosticQueryRejectedException exception) {
+            throw exception;
         } catch (IllegalArgumentException exception) {
             throw exception;
         } catch (Exception exception) {

@@ -29,10 +29,13 @@ $env:DB_PASSWORD = "manager0"
 $env:MCP_DB_URL = "jdbc:postgresql://localhost:5432/auth_pipeline"
 $env:MCP_DB_USERNAME = "auth_mcp_readonly"
 $env:MCP_DB_PASSWORD = "<password>"
+$env:MCP_DB_CONNECT_TIMEOUT_SECONDS = "3"
+$env:MCP_DB_QUERY_TIMEOUT_SECONDS = "5"
+$env:MCP_DB_MAX_CONCURRENT_QUERIES = "2"
 .\mcp-diagnostic\build\install\mcp-diagnostic\bin\mcp-diagnostic.bat
 ```
 
-DB 조회는 JDBC connection `readOnly=true`와 PostgreSQL `set transaction read only`로 실행된다.
+DB 조회는 JDBC connection `readOnly=true`와 PostgreSQL `set transaction read only`로 실행된다. 기본 connect/query timeout은 3초/5초이고 동시 DB query는 2개로 제한한다. 초과 요청은 대기시키지 않고 거절한다. 운영에서는 `SELECT`만 부여하고 `default_transaction_read_only=on`인 전용 DB role을 사용한다.
 
 ## Tools
 
@@ -49,11 +52,13 @@ DB 조회는 JDBC connection `readOnly=true`와 PostgreSQL `set transaction read
 
 ## Payload Policy
 
-응답에는 payload 원문, credential, token, raw userId, raw IP를 포함하지 않는다. 반환 기준은 `errorType`, `provider`, `clientType`, `endpoint`, `reasonCode`, `replayStatus`, `payloadHash`, `principalHash`, `ipHash`, `stackHash`, count, timestamp다.
+응답에는 payload 원문, credential, token, raw userId, raw IP와 자유 형식 `last_error`를 포함하지 않는다. `last_error`는 존재 여부만 반환한다. 반환 기준은 `errorType`, `provider`, `clientType`, `endpoint`, `reasonCode`, `replayStatus`, `payloadHash`, `principalHash`, `ipHash`, `stackHash`, count, timestamp다.
+
+`hoursBack=N`은 호출 시점부터 정확히 N시간 전까지다. trend의 `bucket_hour`는 범위 내 row를 정각 단위로 묶으므로 첫 bucket은 일부 시간만 포함될 수 있다.
 
 ## 검증
 
-annotation 기반 tool 등록과 schema를 테스트하고, SDK client ↔ Spring Boot stdio server 초기화·protocol negotiation·`tools/list`·read-only hint 통합 테스트를 수행한 뒤 실행 배포본을 생성한다.
+annotation 기반 tool 등록과 schema, SDK client ↔ Spring Boot stdio server 초기화·protocol negotiation·`tools/list`·read-only hint를 테스트한다. Testcontainers PostgreSQL로 provider/기간 필터, retry/DLQ 집계, trace 응답 정책도 검증한다.
 
 ```powershell
 .\gradlew.bat :mcp-diagnostic:test

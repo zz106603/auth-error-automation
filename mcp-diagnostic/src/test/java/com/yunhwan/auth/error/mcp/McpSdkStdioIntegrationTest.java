@@ -17,7 +17,8 @@ class McpSdkStdioIntegrationTest {
 
     @Test
     void SDK_client가_stdio_server와_협상하고_tool_목록을_조회한다() {
-        String java = Path.of(System.getProperty("java.home"), "bin", "java.exe").toString();
+        String executable = System.getProperty("os.name").toLowerCase().contains("win") ? "java.exe" : "java";
+        String java = Path.of(System.getProperty("java.home"), "bin", executable).toString();
         ServerParameters parameters = ServerParameters.builder(java)
                 .args("-cp", System.getProperty("java.class.path"), McpDiagnosticServer.class.getName())
                 .env(Map.of(
