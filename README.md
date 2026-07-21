@@ -1,122 +1,152 @@
-# Auth Error Outbox Pipeline
+# 인증 실패 운영 분석 시스템
 
-> 인증 실패 이벤트를 **Transactional Outbox + RabbitMQ + Retry/DLQ**로 안전하게 수집하고, 표준 taxonomy와 운영 원장을 통해 장애 상황에서도 추적 가능한 incident signal로 남기는 Backend Reliability 프로젝트입니다.
+> 외부 시스템의 인증 실패 이벤트를 유실에 강한 비동기 파이프라인으로 수집하고, 장애가 발생했을 때 메시지가 어디에서 멈췄는지 추적·진단하는 프로젝트입니다.
 
-단순 메시지 발행 예제나 로그인 구현이 아니라, **인증 실패 분류, 중복 delivery, publish 실패, retry 폭주, DLQ 격리, backlog 증가**를 운영 관점에서 다루는 파이프라인입니다.
+이 프로젝트는 로그인, JWT 발급·검증, OAuth 연동을 제공하는 인증 서비스가 아닙니다. 인증 실패 이벤트를 **안전하게 기록하고 전달하며, Retry/DLQ와 운영 원장에 남은 증거를 바탕으로 장애 원인 후보를 찾는 것**이 목적입니다.
 
-![architecture.svg](docs/diagrams/architecture.svg)
+![인증 실패 이벤트 수집과 진단 아키텍처](docs/diagrams/architecture.svg)
 
-## Portfolio Signals
+## 무엇을 해결하는가
 
-| Signal | 구현 포인트 |
+비동기 시스템은 API가 정상 응답해도 뒤쪽에서 메시지가 유실되거나, 반복 처리되거나, 큐에 계속 쌓일 수 있습니다. 이 프로젝트는 다음 질문에 답할 수 있도록 설계했습니다.
+
+- 인증 실패 이벤트와 발행 대기 메시지가 함께 저장되는가?
+- 같은 메시지가 다시 전달되어도 부작용이 중복되지 않는가?
+- 발행 실패와 일시적인 소비 실패가 복구 가능한 상태로 남는가?
+- 처리할 수 없는 메시지가 정상 흐름을 방해하지 않고 격리되는가?
+- API 응답 시간뿐 아니라 전체 처리 지연과 적체 상태를 확인할 수 있는가?
+- 운영자가 원장과 지표를 근거로 사건을 추적할 수 있는가?
+
+판단 우선순위는 **신뢰성 → 관측 가능성 → 과부하 제어 → 확장성**입니다.
+
+## 핵심 보장
+
+| 보장 | 구현 방식 |
 | --- | --- |
-| Transactional Outbox | AuthError 저장과 Outbox enqueue를 같은 DB transaction으로 처리 |
-| Auth Failure Taxonomy | 인증 실패 유형, provider/client context, hash 기반 식별 필드 저장 |
-| Idempotent Consumer | `processed_message.outbox_id` 원장으로 at-least-once 중복 delivery 흡수 |
-| Retry / DLQ | DB retry gate, RabbitMQ TTL retry queue, DLQ reason code 원장화 |
-| Publish Safety | RabbitMQ publisher confirm/return 기반 success/retry/dead 분기 |
-| Observability | E2E latency, Outbox age, queue depth, throughput imbalance로 판단 |
-| Load Testing | k6 + Prometheus snapshot + drain verification workflow 구성 |
+| 원자적 수집 | AuthError와 Outbox를 같은 DB transaction에서 저장 |
+| 중복 안전성 | API는 `requestId`, Consumer는 `outboxId` 원장으로 중복 제어 |
+| 복구 가능한 실패 | 발행·재시도 의도를 DB에 먼저 기록하고 confirm/return 결과로 상태 전이 |
+| 실패 격리 | 계약 위반과 재시도 소진 메시지를 사유 코드와 함께 DLQ 원장에 격리 |
+| 전체 구간 관측 | 전체 처리 지연, Outbox 적체 시간, 처리량 차이, queue depth와 최종 배출 확인 |
+| 읽기 전용 진단 | PostgreSQL 원장을 MCP/Claude로 조회하되 데이터 변경과 replay 기능은 제공하지 않음 |
 
-## Why It Exists
+목표는 강한 exactly-once가 아니라 **at-least-once 전달 + 멱등 처리 + 복구 가능한 원장 + 운영 가시성**입니다.
 
-비동기 파이프라인은 API가 200 OK를 반환해도 뒤쪽에서 조용히 실패할 수 있습니다. 이 프로젝트는 “요청을 받았는가?”보다 아래 질문에 집중합니다.
+## 구성요소 역할
 
-- 이벤트가 DB와 Outbox에 함께 커밋되는가?
-- 인증 실패 유형이 운영자가 이해할 수 있는 표준 incident signal로 분류되는가?
-- Consumer가 같은 메시지를 여러 번 받아도 안전한가?
-- Retry와 DLQ가 정책대로 동작하고 원인 추적이 가능한가?
-- API latency가 아니라 E2E latency와 backlog age로 병목을 볼 수 있는가?
-
-## Architecture
-
-```text
-API
--> AuthError + Outbox
--> Outbox Poller / Publisher
--> RabbitMQ
--> Consumer + processed_message ledger
--> RetryPublishRequest / TTL Retry Queue
--> DLQ + dead_letter_message ledger
-```
-
-핵심은 **DB에 복구 가능한 상태를 먼저 남기고**, RabbitMQ와 Consumer는 at-least-once를 전제로 설계하는 것입니다.
-
-## Reliability Guarantees
-
-현재 구현의 보장 범위입니다.
-
-- **Atomic write**: AuthError와 recorded Outbox를 같은 transaction에서 커밋
-- **Taxonomy**: 인증 실패 유형을 `INVALID_CREDENTIALS`, `TOKEN_INVALID_SIGNATURE`, `AUTH_PROVIDER_TIMEOUT` 같은 표준 type으로 정규화하고 provider/client/hash context를 저장
-- **Idempotency**: API는 `requestId`, Consumer는 `outbox_id` 기준으로 중복 제어
-- **Retry durability**: retry publish 의도를 DB에 저장한 뒤 별도 poller가 RabbitMQ로 재발행
-- **DLQ visibility**: payload 원문 대신 `payload_hash`, reason code, delivery count 중심으로 추적
-- **Backpressure signal**: Outbox age, queue depth, publish/consume imbalance로 병목 판단
-
-강한 exactly-once, 자동 DLQ replay, 운영환경 HA는 아직 보장하지 않습니다. DLQ replay는 Runbook 기준의 운영 판단 정책만 제공하며, 목표는 **at-least-once + idempotent side effects + operational visibility**입니다.
-
-## Load Test Evidence
-
-로컬 single-node 환경에서 k6와 Prometheus로 아래 신호를 확인했습니다.
-
-| Scenario | Evidence |
+| 구성요소 | 담당하는 일 |
 | --- | --- |
-| LT-001 Baseline | 5 RPS, E2E p95 약 548ms, Outbox backlog 0, Retry/DLQ depth 0 |
-| LT-002E Slice | 30/35 RPS 구간은 안정적이고, 40 RPS부터 E2E p95 sustained check가 실패 |
-| LT-003 Steady | 30 RPS 15분 steady PASS, E2E p95 max 약 939ms, publish/consume delta 27,000 일치 |
-| LT-004A Consumer Slow | 150ms consumer delay에서 Rabbit ready/unacked와 E2E가 증가했지만 retry/DLQ 0, 최종 publish/consume 18,000 일치 |
-| LT-004B RabbitMQ Unavailable | RabbitMQ 60초 중단 중 Outbox backlog 2,932 / age p95 약 77.6s까지 증가, 복구 후 DEAD/DLQ 없이 최종 PUBLISHED 수렴 |
-| LT-004C Retry / DLQ Pressure | retry-once 20%에서 retry depth 28까지 증가 후 DLQ 없이 수렴, retry-until-dead 5%에서 `RETRY_EXHAUSTED` DLQ 원장 118건 기록 |
-| LT-004D Poison Burst | malformed/contract violation 80건이 retry 없이 DLQ 원장 4종 reason code로 격리되고, 정상 메시지 2,401건 publish/consume 수렴 |
-| DM-001 Domain Mix | taxonomy 기반 인증 실패 payload mix를 유입해 MCP diagnostic read model의 type/provider/client 분포 demo 데이터 생성 |
-| Knee Estimate | 로컬 single-node 기준 안정 steady 기준선은 30 RPS, 35 RPS는 tail spike 재검증 대상 |
-| Workflow | clean start gate -> fixed run window -> drain verification -> Prometheus snapshot |
+| Spring Boot | 인증 실패 이벤트 수집, 분류, 상태 전이 |
+| PostgreSQL | AuthError, Outbox, Retry, DLQ 운영 원장 |
+| RabbitMQ | 비동기 전달, 재시도 큐, DLQ 격리 |
+| Prometheus/Grafana | 지연, 적체 시간, 처리량, 큐 깊이의 시간 흐름 확인 |
+| MCP/Claude | 실패 유형·provider·사유·상태와 특정 사건의 처리 위치 조회 |
+| k6 | 정상 부하, 장애 주입, 복구 후 최종 수렴 검증 |
 
-수치는 로컬 환경 기준이며, 운영환경 성능 보장을 의미하지 않습니다. 이 프로젝트에서 중요한 것은 최고 TPS보다 **장애 신호를 숨기지 않는 측정 방식**입니다.
+Elasticsearch/Kibana/Filebeat는 구조화 로그 검색을 위한 선택적 로컬 실험이며 핵심 운영 보장에 포함하지 않습니다.
 
-## Tech Stack
+## 빠른 실행
 
-Java 21, Spring Boot 3.5, Spring Data JPA, PostgreSQL, RabbitMQ, Flyway, Micrometer, Prometheus, Grafana, JUnit 5, Testcontainers, k6
-
-## Quick Start
+필요 환경은 Java 21, Docker Compose, PowerShell입니다.
 
 ```powershell
-docker compose up -d
+Copy-Item .env.example .env
+docker compose -f docker-compose.yml -f docker-compose.observability.yml up -d
 .\gradlew.bat bootRun --args='--spring.profiles.active=local'
 ```
+
+| 확인 대상 | 주소 |
+| --- | --- |
+| API | `http://localhost:8080/api/auth-errors` |
+| 애플리케이션 상태 | `http://localhost:18081/actuator/health` |
+| Prometheus 수집 endpoint | `http://localhost:18081/actuator/prometheus` |
+| Prometheus 화면 | `http://localhost:9090` |
+| Grafana 화면 | `http://localhost:3000` |
+| RabbitMQ 관리 화면 | `http://localhost:15672` |
+
+`/actuator/prometheus`는 애플리케이션이 metric을 노출하는 주소이고, `:9090`은 Prometheus에서 수집 결과를 조회하는 화면입니다.
+
+종료할 때 데이터 volume을 보존하려면 `-v` 없이 실행합니다.
+
+```powershell
+docker compose -f docker-compose.yml -f docker-compose.observability.yml down
+```
+
+## 대표 진단 흐름
+
+1. PostgreSQL, RabbitMQ, 애플리케이션, Prometheus/Grafana를 시작합니다.
+2. Prometheus에서 애플리케이션과 RabbitMQ 수집 상태를 확인합니다.
+3. 여러 인증 실패 유형이 섞인 데모 이벤트를 유입합니다.
+
+```powershell
+.\k6\script\run-dm-001-domain-mix.ps1 -ResetStateBeforeRun -TargetRps 3 -DemoDuration 2m
+```
+
+4. Grafana에서 API 지연 → Outbox 적체 시간 → 발행/소비 처리량 → 큐 깊이 → Retry/DLQ 순으로 확인합니다.
+5. MCP 서버를 준비하고 [MCP 실행 가이드](docs/MCP_DIAGNOSTIC_SERVER.md)에 따라 읽기 전용 DB 계정으로 Claude에 연결합니다.
+
+```powershell
+.\gradlew.bat :mcp-diagnostic:installDist
+```
+
+6. Claude에서 최근 사건 요약이나 특정 `requestId`/`outboxId`의 처리 위치를 조회합니다.
+7. 관측 사실과 원인 후보를 구분하고 [장애 대응 Runbook](docs/RUNBOOK.md)에 따라 추가 확인합니다.
+
+MCP는 row 수정, queue 삭제, replay 같은 운영 조치를 실행하지 않습니다.
+
+| 단계 | 기대 결과 | 실패 시 먼저 확인할 곳 |
+| --- | --- | --- |
+| 인프라 시작 | PostgreSQL·RabbitMQ healthcheck 통과 | `docker compose ps`, container log |
+| 애플리케이션 시작 | `:18081/actuator/health`가 `UP` | 애플리케이션 log, DB/RabbitMQ 환경변수 |
+| 관측 연결 | Prometheus에서 두 `up` query가 `1` | Prometheus Targets, `SPRING_BOOT_METRICS_TARGET` |
+| domain-mix | HTTP 실패 없이 실행 후 queue가 최종 배출 | k6 wrapper log, Grafana의 Outbox/Retry/DLQ |
+| MCP 연결 | tool 목록 조회와 read-only 질의 성공 | MCP stderr, DB role·URL·timeout 설정 |
+| 사건 판단 | 관측 사실과 원인 후보가 분리된 답변 | [Runbook](docs/RUNBOOK.md), [MCP 진단 가이드](docs/MCP_CLAUDE_DIAGNOSTIC_GUIDE.md) |
+
+## 검증
 
 ```powershell
 .\gradlew.bat quickTest
 .\scripts\check-testcontainers.ps1
 .\gradlew.bat integrationTest
+.\gradlew.bat :mcp-diagnostic:test
 ```
 
-Endpoints:
+로컬 단일 노드 환경에서 확인한 대표 결과입니다. 아래 수치는 운영환경 성능 보장이 아니라 장애를 재현하고 수렴 여부를 판단한 증거입니다.
 
-- API: `http://localhost:8080`
-- Health: `http://localhost:8080/actuator/health`
-- Prometheus: `http://localhost:18081/actuator/prometheus`
-- RabbitMQ UI: `http://localhost:15672`
+| 시나리오 | 확인 결과 | 근거 |
+| --- | --- | --- |
+| LT-001 기준 부하 | 5 RPS에서 전체 처리 p95 약 548ms, Outbox/Retry/DLQ 적체 없음 | [LT-001](docs/loadtest/LT-001-baseline.md) |
+| LT-002E 임계 구간 | 30/35 RPS 구간 통과, 40 RPS부터 전체 처리 p95 지속 조건 실패 | [LT-002E](docs/loadtest/LT-002E-slice-knee.md) |
+| LT-003 안정 부하 | 30 RPS를 15분 유지하고 발행·소비 27,000건 일치 | [LT-003](docs/loadtest/LT-003-steady.md) |
+| LT-004A Consumer 지연 | 큐와 전체 처리 지연 증가 후 Retry/DLQ 없이 18,000건 수렴 | [LT-004A](docs/loadtest/LT-004-consumer-slow.md) |
+| LT-004B RabbitMQ 중단 | 중단 중 Outbox에 2,932건 보존, 복구 후 DEAD/DLQ 없이 모두 발행 | [LT-004B](docs/loadtest/LT-004-rabbitmq-unavailable.md) |
+| LT-004C Retry/DLQ 압력 | 일시 실패는 재시도 후 수렴하고, 소진 메시지는 `RETRY_EXHAUSTED`로 원장화 | [LT-004C](docs/loadtest/LT-004-retry-dlq-pressure.md) |
+| LT-004D Poison 메시지 | 비정상 80건을 즉시 격리하면서 정상 2,401건 처리 유지 | [LT-004D](docs/loadtest/LT-004-poison-burst.md) |
+| DM-001 분류 데모 | 다양한 인증 실패 유형을 유입하고 Retry/DLQ 없이 진단용 분포 생성 | [DM-001](docs/loadtest/DM-001-domain-mix.md) |
 
-## Docs
+상세 결과와 원본 snapshot은 [부하 테스트 문서와 증거](docs/loadtest/README.md)에서 확인할 수 있습니다.
 
-- [Architecture](docs/ARCHITECTURE.md)
-- [Auth Failure Taxonomy](docs/AUTH_FAILURE_TAXONOMY.md)
-- [Policy](docs/POLICY.md)
-- [Testing](docs/TESTING.md)
-- [SLI/SLO](docs/SLI_SLO.md)
-- [Runbook](docs/RUNBOOK.md)
-- [MCP Diagnostic Read Model](docs/MCP_DIAGNOSTIC_READ_MODEL.md)
-- [MCP Diagnostic Server](docs/MCP_DIAGNOSTIC_SERVER.md)
-- [Claude MCP Diagnostic Guide](docs/MCP_CLAUDE_DIAGNOSTIC_GUIDE.md)
-- [Domain Mix Demo](docs/loadtest/DM-001-domain-mix.md)
-- [Load Test Workflow](docs/loadtest/AUTOMATED_WORKFLOW.md)
-- [Load Test Result Guide](docs/loadtest/RESULT_INTERPRETATION_GUIDE.md)
-- [Load Test Roadmap](docs/loadtest/ROADMAP.md)
+## 보장하지 않는 범위
 
-## Limitations
+- 실제 로그인, JWT 발급·검증, OAuth provider 연동
+- 강한 exactly-once와 자동 DLQ replay
+- 자동 장애 복구 조치와 MCP write tool
+- PostgreSQL/RabbitMQ 고가용성, 다중 리전, network partition 검증
+- Alertmanager 기반 알림과 자동 incident 생성
+- trace backend를 이용한 분산 추적
+- 운영환경 보안·보존·접근 통제 정책
+- DLQ replay API/worker 구현
 
-- DLQ replay API/worker는 아직 없습니다. 현재는 reason code별 replay 금지/조건부 후보 정책과 운영 승인 기준만 문서화되어 있습니다.
-- 실제 로그인, JWT 발급/검증, OAuth provider 연동은 범위 밖입니다. 인증 실패 이벤트를 운영 분석 가능한 형태로 수집/분류하는 것이 범위입니다.
-- RabbitMQ/PostgreSQL HA, network partition, multi-instance ordering은 별도 검증 대상입니다.
-- DLQ payload 원문 retention, masking, 접근 통제 정책은 운영환경에서 별도 정의가 필요합니다.
+## 문서 안내
+
+| 알고 싶은 내용 | 문서 |
+| --- | --- |
+| 전체 데이터 흐름, 식별자와 장애 격리 | [시스템 아키텍처](docs/ARCHITECTURE.md) |
+| 상태 전이, 불변식, Retry/DLQ/replay 규칙 | [처리 정책](docs/POLICY.md) |
+| 정상·경고·장애 판단 지표 | [SLI/SLO](docs/SLI_SLO.md) |
+| 장애 확인·판단·조치 순서 | [장애 대응 Runbook](docs/RUNBOOK.md) |
+| 테스트 종류와 실행 방법 | [테스트와 검증 기준](docs/TESTING.md) |
+| 인증 실패 유형과 분류 기준 | [인증 실패 분류 체계](docs/AUTH_FAILURE_TAXONOMY.md) |
+| MCP 실행, 보안과 조회 경계 | [MCP 실행 가이드](docs/MCP_DIAGNOSTIC_SERVER.md) |
+| 전체 문서와 증거 분류 | [문서 지도](docs/DOCUMENTATION_MAP.md) |
